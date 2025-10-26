@@ -1,0 +1,3 @@
+- install packages from requirements.txt
+- set tokens and keys in .env and activate
+- run scripts using `main.py`

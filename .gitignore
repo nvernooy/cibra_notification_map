@@ -1,0 +1,12 @@
+documents
+emails
+venv
+website
+.env
+__pycache__
+.mypy_cache
+*.zip
+*.kml
+*.csv
+*.json
+token.pickle

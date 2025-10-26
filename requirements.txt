@@ -1,0 +1,13 @@
+pdfplumber
+pytesseract
+pdf2image
+Pillow
+geopy
+googlemaps
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+google-genai
+simplekml
+gmplot
