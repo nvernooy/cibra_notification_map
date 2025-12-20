@@ -31,3 +31,11 @@ Run script using `main.py`
 ```
 python main.py
 ```
+
+
+# TODO
+extract full adress and other details from public participation emails
+and other application
+and liquor licences
+and events
+https://www.google.com/maps/d/u/1/edit?mid=1vOnXKvaTOzZvFxHs78C6hLhMOt9DQw8-&ll=-33.940284170760286%2C18.40204564999999&z=18

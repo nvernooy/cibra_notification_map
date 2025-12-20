@@ -196,7 +196,7 @@ def upload_files(local_folder_path, pdf_file, address):
         print(f"No files found in '{local_folder_path}'")
         return
 
-    print(f"\nUploading {len(files)} files... ", end="")
+    print(f"Uploading {len(files)} files... ", end="")
     for file_name in files:
         file_path = os.path.join(local_folder_path, file_name)
         try:

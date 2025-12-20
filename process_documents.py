@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 from upload_gdrive import upload_files
 from collections import defaultdict
-from summarise_descriptions import summarize_text
+from ai_summarise_descriptions import ai_summarise_text
+from ai_extract_address import ai_extract_address
 from datetime import datetime
 import signal
 
@@ -40,6 +41,11 @@ def process_documents(path):
             if pages:
                 # Extract address
                 address = extract_address(pages)
+                if not address:
+                    address = ai_extract_address(pdf_file.name, path)
+                if not address:
+                    print(f"WARNING: no address found for {pdf_file.name}")
+                    address = "Cape Town"
                 # title is just street location
                 title = address.split(",")[0].strip()
                 # extract description
@@ -58,7 +64,7 @@ def process_documents(path):
                     "closing_date": closing_date,
                     "file_link": file_link
                 })
-                print(f"{pdf_file.name}:")
+                print(f"\n{pdf_file.name}:")
                 print(f"    Title:       {title}")
                 print(f"    Description: {description}")
                 break
@@ -218,7 +224,7 @@ def extract_description(pages, description_id):
 
     if description:
         # ai summary
-        description = summarize_text(description, description_id)
+        description = ai_summarise_text(description, description_id)
 
     return description
 

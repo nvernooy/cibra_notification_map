@@ -1,4 +1,4 @@
-"""Use gemini api to summarize the application description"""
+""" Use gemini api to get the address from a subject line """
 
 import os
 from google import genai
@@ -18,19 +18,13 @@ except Exception as e:
 MODEL = "gemini-2.5-flash"
 # System instruction to define the model's persona and primary task
 SYSTEM_INSTRUCTION = (
-    "You are an expert editorial assistant. Your task is to analyze the provided "
-    "text and generate a concise, professional summary. The summary should be two sentences "
-    "long at most, capturing the main points and keeping an impersonal and objective tone. Use the passive voice."
-    " Start the summary directly with the main action or purpose of the proposal/application."
-    " Do not add any commentary, just provide the summary. Do not use any em dashes or other complicated formatting, "
-    " in fact remove any extraneous formatting or punctuation, return a cleanly edited text. "
-    "You are a professional providing a summary of the technical text provided"
+    "Extract the street address from the provided text. Return only the address. Do not include extra information, formatting, or conversational responses."
 )
-CACHE_FILE = "summaries.json"
+CACHE_FILE = "addresses.json"
 
 
 def load_cache():
-    """Load previously generated descriptions"""
+    """Load previously generated texts"""
     try:
         if os.path.exists(CACHE_FILE):
             with open(CACHE_FILE, "r") as f:
@@ -41,12 +35,12 @@ def load_cache():
 
 
 def save_cache(cache):
-    """Save the descriptions"""
+    """Save the texts"""
     with open(CACHE_FILE, "w") as f:
         json.dump(cache, f, indent=2)
 
 
-def summarize_text(text: str, description_id):
+def ai_extract_address(text: str, text_id):
     """
     Uses the Gemini API to summarize a single block of text.
     """
@@ -54,11 +48,11 @@ def summarize_text(text: str, description_id):
     # Load cache
     cache = load_cache()
     # Return cached summary if it exists
-    if str(description_id) in cache:
-        return cache[str(description_id)]
+    if str(text_id) in cache:
+        return cache[str(text_id)]
 
     # Construct the user prompt
-    user_prompt = f"Please summarize the following text:\n\n---\n{text}\n---"
+    user_prompt = f"Please extract the street address - if no address exists, return absolutely nothing - from the following text:\n\n---\n{text}\n---"
     try:
         # Generate the content with the system instruction and user prompt
         response = client.models.generate_content(
@@ -70,10 +64,10 @@ def summarize_text(text: str, description_id):
         )
         summary = response.text.strip()
         # Save to cache
-        cache[str(description_id)] = summary
+        cache[str(text_id)] = summary
         save_cache(cache)
 
         return summary
 
     except Exception as e:
-        print(f"An error occurred during API call for text {description_id}: {e}")
+        print(f"An error occurred during API call for text {text_id}: {e}")
