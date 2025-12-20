@@ -31,8 +31,9 @@ def process_documents(path):
     document_data = []
 
     for pdf_file in documents_path.glob("*.pdf"):
-        # only match the Notic or Advertising Notice pdfs
-        if not (pdf_file.name.lower().startswith("notice") or "advertising" in pdf_file.name.lower()):
+        # only match the Notice or Advertising Notice pdfs
+        file_name = pdf_file.name.lower()
+        if not (file_name.startswith("notice") or "advertising" in file_name or "public" in file_name):
             continue
         with pdfplumber.open(pdf_file) as pdf:
             pages = pdf.pages
@@ -92,8 +93,8 @@ def extract_address(pages, attempt=0):
 
     # try the second page
     if label_top is None: 
-        if attempt == 0:
-            return extract_address(pages, 1)
+        if len(pages) < (attempt + 1):
+            return extract_address(pages, attempt + 1)
         else:
             return ""
 
@@ -130,8 +131,6 @@ def extract_address(pages, attempt=0):
             parts.append("Cape Town")
         new_address = ', '.join(parts)
 
-        if raw_address.lower() != new_address.lower():
-            print(f"WARNING: patched {raw_address} to {new_address}")
         return new_address
 
     return _patch_addresss(address)
@@ -253,14 +252,14 @@ def camel_case_word(words):
     return ' '.join(w.capitalize() for w in words.lower().split())
 
 
-def process_all_attachments():
+def process_all_attachments(directory):
     """ loop through the emails in ./emails and extract the information from the notices """
 
     data = []
-    for d in os.listdir("emails"):
-        full_path = os.path.join("emails", d)
+    for d in os.listdir(directory):
+        full_path = os.path.join(directory, d)
         if os.path.isdir(full_path):
             data.extend(process_documents(full_path))
 
-    print(f"Got {len(data)} notices")
+    print(f"Got {len(data)} {directory} items")
     return data

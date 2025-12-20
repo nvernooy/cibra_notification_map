@@ -1,7 +1,6 @@
 """Export map json data to kml or csv format for google my maps"""
 
 import csv
-from process_documents import process_documents, process_all_attachments
 from address_to_pin import get_coordinates
 from datetime import date
 from xml.sax.saxutils import escape
@@ -100,11 +99,10 @@ def export_to_map1_kml():
     print(f"Map saved to {kml_filename}")
 
 
-def export_to_map_csv():
+def export_to_map_csv(filename, document_data):
     """Export map data as csv"""
-    document_data = process_all_attachments()
 
-    csv_filename = f"map_points_{date.today().isoformat()}.csv"
+    csv_filename = f"{filename}_{date.today().isoformat()}.csv"
     # Define the CSV headers.
     csv_headers = ["Address", "Title", "Description", "Closing Date", "View Application"]
 

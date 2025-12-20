@@ -7,8 +7,10 @@ import datetime
 import zipfile
 
 HUBSPOT_TOKEN = os.environ.get("HUBSPOT_APP_TOKEN")
-OUTPUT_DIR = "emails"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+NOTICE_DIR = "emails"
+os.makedirs(NOTICE_DIR, exist_ok=True)
+PUBLIC_DIR = "public_part_emails"
+os.makedirs(PUBLIC_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2025
@@ -55,6 +57,7 @@ def list_emails():
                 "hs_timestamp",
                 "hs_attachment_ids",
                 "hs_email_to_email",
+                "hs_email_html",
             ],  # properties set data to return
             "sorts": [{"propertyName": "hs_timestamp", "direction": "DESCENDING"}],
         }
@@ -85,9 +88,6 @@ def list_emails():
         reciever = props.get("hs_email_to_email")
         sender = props.get("hs_email_sender_email") or ""
 
-        # TODO match public participation emails
-        # eg public participation process, SC16 | Kloof Nek Mandatory Heavy, SC16 | Manufacturing Support Policy , W77 | Drop-off Location for Kloof Nek,
-
         if (
             "fwd" in subject.lower()
             or "fw:" in subject.lower()
@@ -109,31 +109,54 @@ def list_emails():
         #     print(f"skipping sender: {sender}, subject: {subject}")
         #     continue
 
+        # public participation emails - process seperately
+        if (re.search(r"public\s+participation|consultation", subject, re.IGNORECASE) or re.search(r"W77", subject, re.IGNORECASE)):
+            download_public_participation(email, subject)
+            continue
+
+        # city notice emails for noticeboard
         has_notice = re.search(r"notice", subject, re.IGNORECASE) 
         has_erf = re.search(r"erf\s+\d+", subject, re.IGNORECASE)
         has_case = re.search(r"case\s+\d+", subject, re.IGNORECASE)
-        if not (
-            has_notice or (has_erf and has_case)
-            # or re.search(r"public\s+participation|consultation", subject, re.IGNORECASE)
-        ):
-            print(f"skipping: {subject}")
+        has_land_use = re.search(r"land\s+use", subject, re.IGNORECASE)
+        if not (has_notice or has_land_use or (has_erf and has_case)):
+            # print(f"\tskipping: {subject}")
             continue
 
-        email_id = email["id"]
-        print(f"\tMatched Email {email_id}: {subject}")
-
-        try:
-            # download the attachments
-            extract_urls(email)
-        except Exception as e:
-            print(f"Error downloading from {subject}", e)
+        download_notices(email, subject)
 
 
-def extract_urls(email):
-    """Get the attachment urls from the email body or the attachment files"""
-    email_text = email["properties"].get("hs_email_text", "")
+def download_public_participation(email, subject):
     email_id = email["id"]
-    email_dir = os.path.join(OUTPUT_DIR, email_id)
+    print(f"Matched Participation Email {email_id}: {subject}")
+
+    try:
+        # download the attachments
+        extract_urls(email, PUBLIC_DIR)
+    except Exception as e:
+        print(f"Error downloading from {subject}")
+        import traceback
+        traceback.print_exc()
+
+
+def download_notices(email, subject):
+    email_id = email["id"]
+    print(f"Matched Notice Email {email_id}: {subject}")
+
+    try:
+        # download the attachments
+        extract_urls(email, NOTICE_DIR)
+    except Exception as e:
+        print(f"Error downloading from {subject}", e)
+
+
+def extract_urls(email, directory):
+    """Get the attachment urls from the email body or the attachment files"""
+    email_text = email["properties"].get("hs_email_text")
+    if not email_text:
+        email_text = email["properties"].get("hs_email_html") or ""
+    email_id = email["id"]
+    email_dir = os.path.join(directory, email_id)
 
     # Check if directory already exists - dont download again
     if os.path.exists(email_dir):
@@ -159,10 +182,12 @@ def extract_urls(email):
             print(f"  → Downloaded {filename}")
             # extract zip file
             unzip_files(f"{email_dir}/attachments.zip")
+            return
         except Exception as e:
             print(f"  → Failed to download {url}: {e}")
-    # try downloading attachments on email
-    elif email["properties"].get("hs_attachment_ids"):
+    
+    # fallback - try downloading attachments on email
+    if email["properties"].get("hs_attachment_ids"):
         attachment_ids = email["properties"]["hs_attachment_ids"].split(";")
 
         for fid in attachment_ids:
@@ -171,30 +196,34 @@ def extract_urls(email):
                 continue
 
             # Get file metadata and signed URL
-            res = requests.get(
-                f"https://api.hubapi.com/files/v3/files/{file_id}/signed-url",
-                headers=headers,
-            )
-            res.raise_for_status()
-            data = res.json()
-            url = data.get("url")
-            name = data.get("name", f"file_{file_id}")
-            filename = f'{name}.{data.get("extension", "pdf")}'
+            try:
+                res = requests.get(
+                    f"https://api.hubapi.com/files/v3/files/{file_id}/signed-url",
+                    headers=headers,
+                )
+                res.raise_for_status()
+                data = res.json()
+                url = data.get("url")
+                name = data.get("name", f"file_{file_id}")
+                filename = f'{name}.{data.get("extension", "pdf")}'
 
-            if not url:
-                print(f"  → No signed URL for {file_id}")
+                if not url:
+                    print(f"  → No signed URL for {file_id}")
+                    continue
+
+                # Download file
+                f_res = requests.get(url)
+                f_res.raise_for_status()
+                # Create email-specific directory
+                os.makedirs(email_dir, exist_ok=True)
+                filename = os.path.join(email_dir, filename)
+
+                with open(filename, "wb") as out:
+                    out.write(f_res.content)
+                print(f"  → Downloaded {name}")
+            except requests.exceptions.HTTPError as err:
+                print(f"  → Failed to download file {file_id}: {err}")
                 continue
-
-            # Download file
-            f_res = requests.get(url)
-            f_res.raise_for_status()
-            # Create email-specific directory
-            os.makedirs(email_dir, exist_ok=True)
-            filename = os.path.join(email_dir, filename)
-
-            with open(filename, "wb") as out:
-                out.write(f_res.content)
-            print(f"  → Downloaded {name}")
 
 
 def unzip_files(filename):
