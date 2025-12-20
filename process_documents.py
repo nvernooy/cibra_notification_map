@@ -39,6 +39,8 @@ def process_documents(path):
             if pages:
                 # Extract address
                 address = extract_address(pages)
+                # title is just street location
+                title = address.split(",")[0].strip()
                 # extract description
                 description = extract_description(pages, path)
                 # extract closing date
@@ -121,12 +123,11 @@ def extract_address(pages, attempt=0):
             # Remove numbers before the street that are not part of a range
             new_address = re.sub(r'^[\d,\s]+', number + ' ', new_address)
 
-        # Camel case the words
-        def camel_case_word(word):
-            return word.capitalize()
-
         parts = new_address.split(', ')
-        parts = [' '.join(camel_case_word(w) for w in part.lower().split()) for part in parts]
+        parts = [camel_case_word(part) for part in parts]
+        # add cape town if missing
+        if parts[len(parts)-1] != "Cape Town":
+            parts.append("Cape Town")
         new_address = ', '.join(parts)
 
         if raw_address.lower() != new_address.lower():
@@ -243,9 +244,13 @@ def extract_closing_date(pages):
             close_date = " ".join(line_words)
             close_date = close_date.strip()
             if close_date:
-                return close_date
+                return camel_case_word(close_date)
 
     return ""
+
+def camel_case_word(words):
+    """ Camel case the words """
+    return ' '.join(w.capitalize() for w in words.lower().split())
 
 
 def process_all_attachments():
