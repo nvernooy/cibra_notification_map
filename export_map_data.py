@@ -106,7 +106,7 @@ def export_to_map_csv():
 
     csv_filename = f"map_points_{date.today().isoformat()}.csv"
     # Define the CSV headers.
-    csv_headers = ["Address", "Description", "Closing Date", "View Application"]
+    csv_headers = ["Address", "Title", "Description", "Closing Date", "View Application"]
 
     with open(csv_filename, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -118,13 +118,13 @@ def export_to_map_csv():
                 print("ERROR no address", item)
                 continue
 
-            name = item.get("title", "")
+            title = item.get("title", "")
             address = item.get("address", "")
             description = item.get("description", "")
             closing_date = item.get("closing_date", "")
             view_application_link = item.get("file_link", "")
 
             # Write the row to the CSV file
-            writer.writerow([address, description, closing_date, view_application_link])
+            writer.writerow([address, title, description, closing_date, view_application_link])
 
     print(f"Map data saved to {csv_filename}")

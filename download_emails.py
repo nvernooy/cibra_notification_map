@@ -12,8 +12,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2025
-cuttoff_month = 8
-cuttoff_day = 7
+cuttoff_month = 10
+cuttoff_day = 25
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -83,6 +83,7 @@ def list_emails():
         subject = props.get("hs_email_subject", "") or ""
         subject = subject.strip()
         reciever = props.get("hs_email_to_email")
+        sender = props.get("hs_email_sender_email") or ""
 
         # TODO match public participation emails
         # eg public participation process, SC16 | Kloof Nek Mandatory Heavy, SC16 | Manufacturing Support Policy , W77 | Drop-off Location for Kloof Nek,
@@ -103,9 +104,17 @@ def list_emails():
         if reciever == "panel@cibra.co.za":
             continue
 
+        # hs_email_sender_email is forwarding email
+        # if "capetown.gov.za" not in sender.lower():
+        #     print(f"skipping sender: {sender}, subject: {subject}")
+        #     continue
+
+        has_notice = re.search(r"notice", subject, re.IGNORECASE) 
+        has_erf = re.search(r"erf\s+\d+", subject, re.IGNORECASE)
+        has_case = re.search(r"case\s+\d+", subject, re.IGNORECASE)
         if not (
-            re.search(r"\bnotice\b", subject, re.IGNORECASE)
-            or re.search(r"\bcase\s+\d+\s+erf\b", subject, re.IGNORECASE)
+            has_notice or (has_erf and has_case)
+            # or re.search(r"public\s+participation|consultation", subject, re.IGNORECASE)
         ):
             print(f"skipping: {subject}")
             continue
