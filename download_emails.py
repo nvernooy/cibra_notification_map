@@ -14,8 +14,8 @@ os.makedirs(PUBLIC_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2025
-cuttoff_month = 10
-cuttoff_day = 25
+cuttoff_month = 12
+cuttoff_day = 5
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -99,9 +99,7 @@ def list_emails():
             continue
         # TODO send events to lisa
         if re.search(r"^E[A-Z]?\d+-\d+\b", subject):
-            continue
-        # TODO send panel to panel
-        if reciever == "panel@cibra.co.za":
+            print(f"skipping sender: {sender}, subject: {subject}")
             continue
 
         # hs_email_sender_email is forwarding email
