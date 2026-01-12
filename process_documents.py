@@ -43,9 +43,7 @@ def process_documents(path):
                 address = extract_address(pages)
                 if not address:
                     address = ai_extract_address(pdf_file.name, path)
-                if not address:
-                    print(f"WARNING: no address found for {pdf_file.name}")
-                    address = "Cape Town"
+                    address = format_address(address)
                 # title is just street location
                 title = address.split(",")[0].strip()
                 # extract description
@@ -116,6 +114,9 @@ def extract_address(pages, attempt=0):
                     break
 
     address =  " ".join(address_lines) if address_lines else ""
+    return format_address(address)
+
+def format_address(address):
     address = re.sub(r"\(.*?\)", "", address).strip()
 
     # patch weird formats
