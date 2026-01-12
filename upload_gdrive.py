@@ -9,6 +9,7 @@ from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2 import service_account
 from googleapiclient.errors import HttpError
+from google.auth.exceptions import RefreshError
 import pathlib
 import requests
 from datetime import datetime
@@ -35,6 +36,10 @@ def authenticate():
                 # Save refreshed token
                 with open("token.pickle", "wb") as token:
                     pickle.dump(creds, token)
+            except RefreshError as e:
+                print(f"Token expired - please rerun the script and log in again")
+                os.remove("token.pickle")
+                raise
             except Exception as e:
                 print(f"Error refreshing token: {e}")
                 os.remove("token.pickle")
