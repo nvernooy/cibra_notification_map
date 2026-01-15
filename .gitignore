@@ -1,6 +1,7 @@
 documents
 emails
 public_part_emails
+events_emails
 venv
 website
 .env

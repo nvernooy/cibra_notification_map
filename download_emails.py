@@ -11,6 +11,8 @@ NOTICE_DIR = "emails"
 os.makedirs(NOTICE_DIR, exist_ok=True)
 PUBLIC_DIR = "public_part_emails"
 os.makedirs(PUBLIC_DIR, exist_ok=True)
+EVENTS_DIR = "events_emails"
+os.makedirs(EVENTS_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2025
@@ -95,11 +97,11 @@ def list_emails():
             or "automatic reply" in subject.lower()
             or "panel application" in subject.lower()
             or subject.lower().startswith("form")
+            or "[cibra.co.za]" in subject
+            or "Sucuri Alert" in subject
+            or "Weekly WP Mail SMTP Summary" in subject
+            or "[Cape Town City Bowl Ratepayers' and Residents' Association (CIBRA)]" in subject
         ):
-            continue
-        # TODO send events to lisa
-        if re.search(r"^E[A-Z]?\d+-\d+\b", subject):
-            print(f"skipping sender: {sender}, subject: {subject}")
             continue
 
         # hs_email_sender_email is forwarding email
@@ -107,8 +109,13 @@ def list_emails():
         #     print(f"skipping sender: {sender}, subject: {subject}")
         #     continue
 
-        # public participation emails - process seperately
-        if (re.search(r"public\s+participation|consultation", subject, re.IGNORECASE) or re.search(r"W77", subject, re.IGNORECASE)):
+        # export events
+        if re.search(r"E[A-Z]?\d+-\d+\b", subject):
+            download_events(email, subject)
+            continue
+
+        # public participation emails
+        if (re.search(r"public\s+participation|consultation", subject, re.IGNORECASE) or re.search(r"W77|WCP", subject, re.IGNORECASE) or re.search(r"(?=.*HIA)(?=.*comment)", subject, re.IGNORECASE) or ("public auction" in subject.lower()) or ("have your say" in subject.lower())):
             download_public_participation(email, subject)
             continue
 
@@ -118,16 +125,14 @@ def list_emails():
         has_case = re.search(r"case\s+\d+", subject, re.IGNORECASE)
         has_land_use = re.search(r"land\s+use", subject, re.IGNORECASE)
         if not (has_notice or has_land_use or (has_erf and has_case)):
-            # print(f"\tskipping: {subject}")
+            # print(f"\t\t\tskipping: {subject}")
             continue
 
         download_notices(email, subject)
 
 
 def download_public_participation(email, subject):
-    email_id = email["id"]
-    print(f"Matched Participation Email {email_id}: {subject}")
-
+    print(f"Matched Public Part. Email:\t{subject}")
     try:
         # download the attachments
         extract_urls(email, PUBLIC_DIR)
@@ -138,14 +143,25 @@ def download_public_participation(email, subject):
 
 
 def download_notices(email, subject):
-    email_id = email["id"]
-    print(f"Matched Notice Email {email_id}: {subject}")
-
+    print(f"Matched Notice Email:\t{subject}")
     try:
         # download the attachments
         extract_urls(email, NOTICE_DIR)
     except Exception as e:
-        print(f"Error downloading from {subject}", e)
+        print(f"Error downloading from {subject}")
+        import traceback
+        traceback.print_exc()
+
+
+def download_events(email, subject):
+    print(f"Matched Event Email:\t{subject}")
+    try:
+        # download the attachments
+        extract_urls(email, EVENTS_DIR)
+    except Exception as e:
+        print(f"Error downloading from {subject}")
+        import traceback
+        traceback.print_exc()
 
 
 def extract_urls(email, directory):
