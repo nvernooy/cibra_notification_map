@@ -18,7 +18,7 @@ except Exception as e:
 MODEL = "gemini-2.5-flash"
 # System instruction to define the model's persona and primary task
 SYSTEM_INSTRUCTION = (
-    "Extract the street address from the provided text. Return only the address. Do not include extra information, formatting, or conversational responses."
+    "Extract all street names or addresses from the text. Return only the extracted names. If none are found, return nothing. Do not include extra information, formatting, or conversational responses."
 )
 CACHE_FILE = "addresses.json"
 
@@ -52,7 +52,7 @@ def ai_extract_address(text: str, text_id):
         return cache[str(text_id)]
 
     # Construct the user prompt
-    user_prompt = f"Please extract the street address - if no address exists, return absolutely nothing - from the following text:\n\n---\n{text}\n---"
+    user_prompt = f"Please extract the street names or addresses - if no none exists, return absolutely nothing - from the following text:\n\n---\n{text}\n---"
     try:
         # Generate the content with the system instruction and user prompt
         response = client.models.generate_content(

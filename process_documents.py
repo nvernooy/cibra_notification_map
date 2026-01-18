@@ -1,6 +1,7 @@
 import pdfplumber
 import re
 import os
+import json
 from pathlib import Path
 from upload_gdrive import upload_files
 from collections import defaultdict
@@ -117,6 +118,8 @@ def extract_address(pages, attempt=0):
     return format_address(address)
 
 def format_address(address):
+    if not address:
+        address = ""
     address = re.sub(r"\(.*?\)", "", address).strip()
 
     # patch weird formats
@@ -259,14 +262,55 @@ def camel_case_word(words):
     return ' '.join(w.capitalize() for w in words.lower().split())
 
 
+def process_subject_line(path, email_id):
+    """ Get info from the email subject line """
+
+    subject_list = {}
+    with open("email_subject.json", "r") as f:
+        subject_list = json.load(f)
+
+    subject = subject_list[email_id]
+    address = ai_extract_address(subject, email_id)
+    address = format_address(address)
+    
+    # format description from subject line
+    description = re.sub(r'^.*? - |\s*\(.*\)$', '', subject).strip()
+    # format title
+    title = re.sub(r'\s*-[^-]*$', '', description).strip()
+
+    pattern = r"\b\d{1,2}(?:st|nd|rd|th)?(?:\s?[-–—]\s?\d{1,2}(?:st|nd|rd|th)?)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+\d{4})?\b"
+    match = re.search(pattern, subject, re.IGNORECASE)
+    closing_date = match and match.group()
+
+    # upload all the attachments from the email to the google drive
+    file_link = upload_files(path, "Events Permit", address)
+    document_data = []
+    document_data.append({
+        "filename": subject,
+        "address": address,
+        "title": title,
+        "description": description,
+        "closing_date": closing_date,
+        "file_link": file_link
+    })
+    print(f"\n{subject}:")
+    print(f"    Title:       {title}")
+    print(f"    Description: {description}")
+    return document_data
+
+
 def process_all_attachments(directory):
-    """ loop through the emails in ./emails and extract the information from the notices """
+    """ loop through the emails in the directory and extract the information from the files """
 
     data = []
     for d in os.listdir(directory):
         full_path = os.path.join(directory, d)
         if os.path.isdir(full_path):
-            data.extend(process_documents(full_path))
+            result = process_documents(full_path)
+            # if no info found in attachments process the subject line
+            if not result:
+                result = process_subject_line(full_path, d)
+            data.extend(result)
 
     print(f"Got {len(data)} {directory} items")
     return data

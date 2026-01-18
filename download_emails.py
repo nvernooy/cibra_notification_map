@@ -2,6 +2,7 @@
 
 import os
 import re
+import json
 import requests
 import datetime
 import zipfile
@@ -25,6 +26,25 @@ headers = {
     "Authorization": f"Bearer {HUBSPOT_TOKEN}",
     "Content-Type": "application/json",
 }
+
+CACHE_FILE = "email_subject.json"
+
+
+def load_cache():
+    """Load previously generated texts"""
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+
+def save_cache(cache):
+    """Save the texts"""
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f, indent=2)
 
 
 def list_emails():
@@ -111,12 +131,12 @@ def list_emails():
 
         # export events
         if re.search(r"E[A-Z]?\d+-\d+\b", subject):
-            download_events(email, subject)
+            download_email(email, subject, EVENTS_DIR)
             continue
 
         # public participation emails
         if (re.search(r"public\s+participation|consultation", subject, re.IGNORECASE) or re.search(r"W77|WCP", subject, re.IGNORECASE) or re.search(r"(?=.*HIA)(?=.*comment)", subject, re.IGNORECASE) or ("public auction" in subject.lower()) or ("have your say" in subject.lower())):
-            download_public_participation(email, subject)
+            download_email(email, subject, PUBLIC_DIR)
             continue
 
         # city notice emails for noticeboard
@@ -128,36 +148,20 @@ def list_emails():
             # print(f"\t\t\tskipping: {subject}")
             continue
 
-        download_notices(email, subject)
+        download_email(email, subject, NOTICE_DIR)
 
 
-def download_public_participation(email, subject):
-    print(f"Matched Public Part. Email:\t{subject}")
+def download_email(email, subject, directory):
+    print(f"Matched Email:\t{subject}")
+    
+    # store id and subject line
+    subjects_list = load_cache()
+    subjects_list[email["id"]] = subject
+    save_cache(subjects_list)
+    
     try:
         # download the attachments
-        extract_urls(email, PUBLIC_DIR)
-    except Exception as e:
-        print(f"Error downloading from {subject}")
-        import traceback
-        traceback.print_exc()
-
-
-def download_notices(email, subject):
-    print(f"Matched Notice Email:\t{subject}")
-    try:
-        # download the attachments
-        extract_urls(email, NOTICE_DIR)
-    except Exception as e:
-        print(f"Error downloading from {subject}")
-        import traceback
-        traceback.print_exc()
-
-
-def download_events(email, subject):
-    print(f"Matched Event Email:\t{subject}")
-    try:
-        # download the attachments
-        extract_urls(email, EVENTS_DIR)
+        extract_urls(email, directory)
     except Exception as e:
         print(f"Error downloading from {subject}")
         import traceback
