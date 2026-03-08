@@ -76,4 +76,22 @@ def ai_summarise_text(text: str, description_id):
         return summary
 
     except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            print(f"Quota exceeded for {description_id}, retrying with gemini-2.0-flash...")
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash-lite",
+                    contents=[user_prompt],
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                    ),
+                )
+                summary = response.text.strip()
+                cache[str(description_id)] = summary
+                save_cache(cache)
+                return summary
+           except Exception as fallback_e:
+                print(f"Fallback model also failed for {description_id}: {fallback_e}")
+                return None
+
         print(f"An error occurred during API call for text {description_id}: {e}")
