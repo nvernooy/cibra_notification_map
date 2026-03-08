@@ -265,29 +265,46 @@ def extract_description(pages, description_id):
     return description
 
 def extract_closing_date(pages):
+    date_pattern = re.compile(
+        r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b',
+        re.IGNORECASE
+    )
 
-    # Extract closing date, can be on any page
     for page in pages:
         words = page.extract_words()
-        
-        # Find the top coordinate of "Closing"
+
+        # Find the top coordinate of "Closing date"
         closing_top = None
         for i, w in enumerate(words):
             if w['text'] == "Closing":
-                # check if next word exists and is "date" (case-insensitive)
                 if i + 1 < len(words) and words[i + 1]['text'] == "date":
                     closing_top = w['top']
                     break
 
-        if closing_top:
-            # Select words slightly below the "Closing" line
-            line_words = [w['text'] for w in words if closing_top + 15 < w['top'] < closing_top + 35]
-            close_date = " ".join(line_words)
-            close_date = close_date.strip()
-            if close_date:
-                return camel_case_word(close_date)
+        if closing_top is None:
+            continue
 
-    return ""
+        # Collect all words in a wider band below "Closing date" (up to ~80px)
+        # This handles multi-line labels before the actual date value
+        nearby_words = [w for w in words if closing_top + 10 < w['top'] < closing_top + 80]
+
+        # Group nearby words by line (words within 5px vertically = same line)
+        lines = []
+        for w in nearby_words:
+            placed = False
+            for line in lines:
+                if abs(line[0]['top'] - w['top']) < 5:
+                    line.append(w)
+                    placed = True
+                    break
+            if not placed:
+                lines.append([w])
+
+        # Find the first line that looks like a date
+        for line in lines:
+            line_text = " ".join(w['text'] for w in line).strip()
+            if date_pattern.search(line_text):
+                return camel_case_word(line_text)
 
 def camel_case_word(words):
     """ Camel case the words """
