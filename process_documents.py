@@ -4,11 +4,13 @@ import os
 import json
 from pathlib import Path
 from upload_gdrive import upload_files
+from download_emails import CACHE_FILE
 from collections import defaultdict
 from ai_summarise_descriptions import ai_summarise_text
 from ai_extract_address import ai_extract_address
-from datetime import datetime
+from datetime import datetime, timedelta
 import signal
+import shutil
 
 # Regex patterns
 address_pattern = re.compile(
@@ -40,6 +42,16 @@ def process_documents(path):
         with pdfplumber.open(pdf_file) as pdf:
             pages = pdf.pages
             if pages:
+                # extract closing date
+                closing_date = extract_closing_date(pages)
+                if not closing_date:
+                    print(f"\n{pdf_file.name}: WARNING NO DATE")
+                elif expired_date(closing_date):
+                    # check if closing date far in the past
+                    print(f"\n{pdf_file.name}: closing date {closing_date} expired - deleting")
+                    shutil.rmtree(documents_path)
+                    return []
+
                 # Extract address
                 address = extract_address(pages)
                 if not address:
@@ -49,8 +61,6 @@ def process_documents(path):
                 title = address.split(",")[0].strip()
                 # extract description
                 description = extract_description(pages, path)
-                # extract closing date
-                closing_date = extract_closing_date(pages)
 
                 # upload all the attachments from the email to the google drive
                 file_link = upload_files(path, pdf_file, address)
@@ -68,7 +78,29 @@ def process_documents(path):
                 print(f"    Description: {description}")
                 break
 
+
+    # TODO refine
+    # if no info found in attachments process the subject line
+    if not document_data:
+        document_data = process_subject_line(path)
+
     return document_data
+
+
+def expired_date(date_str: str, days=10) -> bool:
+    """ Check if the string date is more than 10 days in the past """
+    formats = ["%d %b %Y", "%d %B %Y"]
+    
+    for fmt in formats:
+        try:
+            date = datetime.strptime(date_str, fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        raise ValueError(f"Invalid date format: {date_str}")
+
+    return datetime.now() - date > timedelta(days=days)
 
 
 def extract_address(pages, attempt=0):
@@ -262,13 +294,14 @@ def camel_case_word(words):
     return ' '.join(w.capitalize() for w in words.lower().split())
 
 
-def process_subject_line(path, email_id):
+def process_subject_line(path):
     """ Get info from the email subject line """
 
     subject_list = {}
-    with open("email_subject.json", "r") as f:
+    with open(CACHE_FILE, "r") as f:
         subject_list = json.load(f)
 
+    email_id = os.path.basename(path)
     subject = subject_list[email_id]
     address = ai_extract_address(subject, email_id)
     address = format_address(address)
@@ -303,13 +336,10 @@ def process_all_attachments(directory):
     """ loop through the emails in the directory and extract the information from the files """
 
     data = []
-    for d in os.listdir(directory):
-        full_path = os.path.join(directory, d)
+    for email_id in os.listdir(directory):
+        full_path = os.path.join(directory, email_id)
         if os.path.isdir(full_path):
             result = process_documents(full_path)
-            # if no info found in attachments process the subject line
-            if not result:
-                result = process_subject_line(full_path, d)
             data.extend(result)
 
     print(f"Got {len(data)} {directory} items")
