@@ -108,10 +108,9 @@ def upload_file(service, file_path, folder_id):
     query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
     results = service.files().list(q=query, fields="files(id, name)").execute()
     files = results.get("files", [])
-
+    # exist early
     if files:
-        file_id = files[0]["id"]
-        return file_id
+        return
 
     file_metadata = {"name": file_name, "parents": [folder_id]}
     media = MediaFileUpload(file_path, resumable=True)
@@ -205,7 +204,10 @@ def upload_files(local_folder_path, pdf_file, address):
     for file_name in files:
         file_path = os.path.join(local_folder_path, file_name)
         try:
-            upload_file(service, file_path, folder_id)
+            resp = upload_file(service, file_path, folder_id)
+            # file exists or other error, continue
+            if not resp:
+                break
         except Exception as e:
             print(f"Error uploading {file_name}: {str(e)}")
 
