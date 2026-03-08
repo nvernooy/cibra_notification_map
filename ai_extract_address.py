@@ -54,7 +54,6 @@ def ai_extract_address(text: str, text_id):
     # Construct the user prompt
     user_prompt = f"Please extract the street names or addresses - if no none exists, return absolutely nothing - from the following text:\n\n---\n{text}\n---"
     try:
-        # Generate the content with the system instruction and user prompt
         response = client.models.generate_content(
             model=MODEL,
             contents=[user_prompt],
@@ -62,6 +61,24 @@ def ai_extract_address(text: str, text_id):
                 system_instruction=SYSTEM_INSTRUCTION,
             ),
         )
+
+        if response is None:
+            raise RuntimeError(f"Empty response for text {text_id}")
+
+        if not getattr(response, "text", None):
+            finish_reason = None
+            safety = None
+
+            if getattr(response, "candidates", None):
+                candidate = response.candidates[0]
+                finish_reason = getattr(candidate, "finish_reason", None)
+                safety = getattr(candidate, "safety_ratings", None)
+
+            raise RuntimeError(
+                f"No text returned for text {text_id}. "
+                f"finish_reason={finish_reason} safety={safety}"
+            )
+
         summary = response.text.strip()
         # Save to cache
         cache[str(text_id)] = summary
@@ -70,4 +87,7 @@ def ai_extract_address(text: str, text_id):
         return summary
 
     except Exception as e:
-        print(f"An error occurred during API call for text {text_id}: {e}")
+        status_code = getattr(e, "status_code", None)
+        response_body = getattr(e, "response", None)
+        print(f"An error occurred during API call for text {text_id}: {status_code} {e} {response_body}")
+        return ""
