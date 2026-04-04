@@ -270,6 +270,10 @@ def extract_closing_date(pages):
         r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b',
         re.IGNORECASE
     )
+    on_or_before_pattern = re.compile(
+        r'on\s+or\s+before\s+(' + date_pattern.pattern + r')',
+        re.IGNORECASE
+    )
 
     for page in pages:
         words = page.extract_words()
@@ -306,6 +310,13 @@ def extract_closing_date(pages):
             line_text = " ".join(w['text'] for w in line).strip()
             if date_pattern.search(line_text):
                 return camel_case_word(line_text)
+
+    # Fallback: scan full page text for "on or before <date>" (memo-style documents)
+    for page in pages:
+        text = page.extract_text() or ""
+        match = on_or_before_pattern.search(text)
+        if match:
+            return camel_case_word(match.group(1))
 
 def camel_case_word(words):
     """ Camel case the words """
