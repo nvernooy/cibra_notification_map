@@ -4,7 +4,6 @@ import os
 import json
 from pathlib import Path
 from upload_gdrive import upload_files
-from download_emails import CACHE_FILE
 from collections import defaultdict
 from ai_summarise_descriptions import ai_summarise_text
 from ai_extract_address import ai_extract_address
@@ -84,13 +83,6 @@ def process_documents(path):
                 print(f"    Title:       {title}")
                 print(f"    Description: {description}")
                 break
-
-
-    # TODO refine
-    # if no info found in attachments process the subject line
-    if not document_data:
-        print(f"\n{path}: WARNING NO DATA")
-        document_data = process_subject_line(path)
 
     return document_data
 
@@ -329,44 +321,6 @@ def extract_closing_date(pages):
 def camel_case_word(words):
     """ Camel case the words """
     return ' '.join(w.capitalize() for w in words.lower().split())
-
-
-def process_subject_line(path):
-    """ Get info from the email subject line """
-
-    subject_list = {}
-    with open(CACHE_FILE, "r") as f:
-        subject_list = json.load(f)
-
-    email_id = os.path.basename(path)
-    subject = subject_list[email_id]
-    address = ai_extract_address(subject, email_id)
-    address = format_address(address)
-    
-    # format description from subject line
-    description = re.sub(r'^.*? - |\s*\(.*\)$', '', subject).strip()
-    # format title
-    title = re.sub(r'\s*-[^-]*$', '', description).strip()
-
-    pattern = r"\b\d{1,2}(?:st|nd|rd|th)?(?:\s?[-–—]\s?\d{1,2}(?:st|nd|rd|th)?)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+\d{4})?\b"
-    match = re.search(pattern, subject, re.IGNORECASE)
-    closing_date = match and match.group()
-
-    # upload all the attachments from the email to the google drive
-    file_link = upload_files(path, "Events Permit", address)
-    document_data = []
-    document_data.append({
-        "filename": subject,
-        "address": address,
-        "title": title,
-        "description": description,
-        "closing_date": closing_date,
-        "file_link": file_link
-    })
-    print(f"\n{subject}:")
-    print(f"    Title:       {title}")
-    print(f"    Description: {description}")
-    return document_data
 
 
 def process_all_attachments(directory):

@@ -1,5 +1,6 @@
 from export_map_data import export_to_map_csv
-from process_documents import process_documents, process_all_attachments
+from process_documents import process_all_attachments
+from process_events_documents import process_all_events
 from download_emails import list_emails, NOTICE_DIR, PUBLIC_DIR, EVENTS_DIR
 
 if __name__ == "__main__":
@@ -16,7 +17,7 @@ if __name__ == "__main__":
     # export email data to csv map data
     export_to_map_csv("public", document_data)
 
-    # extract info from events mails
-    document_data = process_all_attachments(EVENTS_DIR)
+    # extract info from events emails (parsed from subject line, no AI)
+    document_data = process_all_events(EVENTS_DIR)
     # export email data to csv map data
     export_to_map_csv("events", document_data)
