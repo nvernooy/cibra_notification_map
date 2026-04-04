@@ -17,8 +17,8 @@ os.makedirs(EVENTS_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2026
-cuttoff_month = 1
-cuttoff_day = 10
+cuttoff_month = 3
+cuttoff_day = 7
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -152,7 +152,7 @@ def list_emails():
 
 
 def download_email(email, subject, directory):
-    print(f"Matched Email {email["id"]}:\t{subject}")
+    # print(f"Matched Email {email["id"]}:\t{subject}")
     
     # store id and subject line
     subjects_list = load_cache()
