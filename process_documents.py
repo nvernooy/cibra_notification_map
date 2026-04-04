@@ -34,7 +34,12 @@ def process_documents(path):
     documents_path = Path(path)
     document_data = []
 
-    for pdf_file in documents_path.glob("*.pdf"):
+    pdf_files = documents_path.glob("*.pdf")
+    if next(pdf_files, None) is None:
+        print(f"{path}: WARNING NO PDF ATTACHEMENTS")
+        return document_data
+
+    for pdf_file in pdf_files:
         # only match the Notice or Advertising Notice pdfs
         file_name = pdf_file.name.lower()
         if not (file_name.startswith("notice") or "advertising" in file_name or "public" in file_name):
@@ -46,15 +51,17 @@ def process_documents(path):
                 closing_date = extract_closing_date(pages)
                 if not closing_date:
                     print(f"\n{pdf_file.name}: WARNING NO DATE")
+                    continue
                 elif expired_date(closing_date):
                     # check if closing date far in the past
-                    print(f"\n{pdf_file.name}: closing date {closing_date} expired - deleting")
+                    print(f"\n{pdf_file.name}: DELETING - closing date {closing_date} expired")
                     shutil.rmtree(documents_path)
                     return []
 
                 # Extract address
                 address = extract_address(pages)
                 if not address:
+                    print(f"\n{pdf_file.name}: WARNING NO ADDRESS")
                     address = ai_extract_address(pdf_file.name, path)
                     address = format_address(address)
                 # title is just street location
@@ -73,7 +80,7 @@ def process_documents(path):
                     "closing_date": closing_date,
                     "file_link": file_link
                 })
-                print(f"\n{pdf_file.name}:")
+                print(f"\n{path}{pdf_file.name}:")
                 print(f"    Title:       {title}")
                 print(f"    Description: {description}")
                 break
@@ -82,6 +89,7 @@ def process_documents(path):
     # TODO refine
     # if no info found in attachments process the subject line
     if not document_data:
+        print(f"\n{path}: WARNING NO DATA")
         document_data = process_subject_line(path)
 
     return document_data
