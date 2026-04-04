@@ -203,6 +203,7 @@ def extract_description(pages, description_id):
             continue
             
         page_text = ""
+        purpose_top = 0
         for i, w in enumerate(words):
             text = w["text"]
 
@@ -229,7 +230,7 @@ def extract_description(pages, description_id):
         # If still capturing and not found "Enquiries", grab whole lower part and end
         if capture:
             x0, x1 = 50, 500
-            y0 = purpose_top + 10 if "purpose_top" in locals() else 0
+            y0 = purpose_top + 10
             y1 = page.height
             area = page.within_bbox((x0, y0, x1, y1))
             page_text = area.extract_text() or ""

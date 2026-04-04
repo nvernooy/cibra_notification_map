@@ -58,7 +58,8 @@ def authenticate():
 
 def create_folder(service, folder_name, parent_id=None):
     """Create a folder in Google Drive if it doesn't already exist."""
-    query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    escaped_name = folder_name.replace("\\", "\\\\").replace("'", "\\'")
+    query = f"name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     if parent_id:
         query += f" and '{parent_id}' in parents"
 
@@ -104,8 +105,9 @@ def upload_file(service, file_path, folder_id):
     """Upload a file to Google Drive if it doesn't already exist in the folder."""
 
     file_name = os.path.basename(file_path)
+    escaped_name = file_name.replace("\\", "\\\\").replace("'", "\\'")
     # Check if file already exists in folder
-    query = f"name = '{file_name}' and '{folder_id}' in parents and trashed = false"
+    query = f"name = '{escaped_name}' and '{folder_id}' in parents and trashed = false"
     results = service.files().list(q=query, fields="files(id, name)").execute()
     files = results.get("files", [])
     # exist early
@@ -183,7 +185,7 @@ def upload_files(local_folder_path, pdf_file, address):
     service = authenticate()
 
     # Create folder in Google Drive
-    folder_id = create_folder(service, folder_name)
+    folder_id = create_folder(service, folder_name, PARENT_FOLDER_ID)
 
     # Upload all files from local folder
     if not os.path.exists(local_folder_path):
