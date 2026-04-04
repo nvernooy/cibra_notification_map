@@ -3,6 +3,7 @@
 import re
 import os
 import json
+import unicodedata
 from download_emails import CACHE_FILE
 from process_documents import format_address
 from upload_gdrive import upload_files
@@ -41,7 +42,6 @@ _DATE_RE = re.compile(
 
 def _normalise(text: str) -> str:
     """Lowercase, strip accents, collapse non-alphanumeric runs to a single space."""
-    import unicodedata
     text = unicodedata.normalize("NFD", text)
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     text = text.lower()
@@ -77,10 +77,22 @@ def parse_event_subject(subject: str) -> dict | None:
     Returns a dict with keys: title, venue, address, event_date
     or None when the subject cannot be parsed reliably.
     """
-    # Strip trailing qualifiers: (External Services), (External), etc.
-    clean = re.sub(r"\s*\([Ee]xternal[^)]*\)\s*$", "", subject).strip()
+    # Strip trailing qualifiers: (External Services), (External), (Externa Services), etc.
+    # Allow a space inside the paren and accept truncated spellings like "Extern".
+    clean = re.sub(r"\s*\(\s*[Ee]xtern[^)]*\)\s*$", "", subject).strip()
     # Normalise pipe separators used in some free-concert subjects
     clean = re.sub(r"\s*\|\s*", " - ", clean)
+
+    # Collapse date ranges that use " - " between the two day numbers so they
+    # don't get mistaken for field separators, e.g. "9 - 10 February" → "9-10 February"
+    _MONTHS = (r"January|February|March|April|May|June|July|August|"
+               r"September|October|November|December")
+    clean = re.sub(
+        rf"(\b\d{{1,2}}(?:st|nd|rd|th)?)\s+-\s+(\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{_MONTHS}))",
+        r"\1-\2",
+        clean,
+        flags=re.IGNORECASE,
+    )
 
     # Extract and remove the leading event code (e.g. "EO26-0155", "EP26-0066")
     code_match = re.match(r"^(E[A-Z]?\d+-\d+)\s*-\s*", clean)
@@ -92,6 +104,17 @@ def parse_event_subject(subject: str) -> dict | None:
 
     # Split remainder on " - "
     parts = re.split(r"\s+-\s+", remainder)
+
+    # Merge any segment that starts with "(" back into the previous one — these
+    # are parenthetical clarifications that belong to the preceding venue name,
+    # e.g. "DSK - (German School), 28 Bay View Ave" should stay together.
+    merged: list[str] = []
+    for part in parts:
+        if merged and part.lstrip().startswith("("):
+            merged[-1] = merged[-1] + " - " + part
+        else:
+            merged.append(part)
+    parts = merged
 
     # Find the rightmost segment that looks like a date
     date_idx = None
@@ -105,7 +128,16 @@ def parse_event_subject(subject: str) -> dict | None:
         return None
 
     venue_text = parts[date_idx - 1]
-    title_parts = parts[:date_idx - 1]
+
+    # If the venue segment is a bare city/area name (no comma, no street number),
+    # it's probably a trailing city suffix — merge it with the preceding segment.
+    _GENERIC = {"cape town", "cbd", "foreshore", "green point", "waterfront"}
+    if _normalise(venue_text) in _GENERIC and date_idx >= 2:
+        venue_text = parts[date_idx - 2] + ", " + venue_text
+        title_parts = parts[:date_idx - 2]
+    else:
+        title_parts = parts[:date_idx - 1]
+
     title = " - ".join(title_parts).strip() if title_parts else venue_text
 
     # Extract the first date occurrence from the date segment
