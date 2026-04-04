@@ -1,6 +1,8 @@
 """Use gemini api to summarize the application description"""
 
 import os
+import time
+import random
 from google import genai
 from google.genai import types
 import json
@@ -18,14 +20,11 @@ except Exception as e:
 MODEL = "gemini-2.5-flash"
 # System instruction to define the model's persona and primary task
 SYSTEM_INSTRUCTION = (
-    "You are an expert editorial assistant. Your task is to analyze the provided "
-    "text and generate a concise, professional summary. The summary should be two sentences "
-    "long at most, capturing the main points and keeping an impersonal and objective tone. Use the passive voice."
-    " Start the summary directly with the main action or purpose of the proposal/application."
-    " Do not add any commentary, just provide the summary. Do not use any em dashes or other complicated formatting, "
-    " in fact remove any extraneous formatting or punctuation, return a cleanly edited text. "
-    "You are a professional providing a summary of the technical text provided"
+    "Summarize the provided text in at most two sentences. Be concise, impersonal, and objective. "
+    "Use passive voice. Start directly with the main action or purpose. "
+    "No commentary, no em dashes, no extra formatting or punctuation."
 )
+MAX_INPUT_CHARS = 2000
 CACHE_FILE = "summaries.json"
 
 
@@ -46,52 +45,47 @@ def save_cache(cache):
         json.dump(cache, f, indent=2)
 
 
-def ai_summarise_text(text: str, description_id):
-    """
-    Uses the Gemini API to summarize a single block of text.
-    """
+def _call_model(model: str, text: str, retries: int = 4) -> str:
+    truncated = text[:MAX_INPUT_CHARS]
+    for attempt in range(retries):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=[truncated],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                ),
+            )
+            return response.text.strip()
+        except Exception as e:
+            if ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)) and attempt < retries - 1:
+                wait = (2 ** attempt) + random.uniform(0, 1)
+                print(f"Rate limited on {model}, retrying in {wait:.1f}s (attempt {attempt + 1}/{retries})...")
+                time.sleep(wait)
+            else:
+                raise
 
-    # Load cache
+
+def ai_summarise_text(text: str, description_id):
+    """Uses the Gemini API to summarize a single block of text."""
     cache = load_cache()
-    # Return cached summary if it exists
     if str(description_id) in cache:
         return cache[str(description_id)]
 
-    # Construct the user prompt
-    user_prompt = f"Please summarize the following text:\n\n---\n{text}\n---"
     try:
-        # Generate the content with the system instruction and user prompt
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=[user_prompt],
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-            ),
-        )
-        summary = response.text.strip()
-        # Save to cache
-        cache[str(description_id)] = summary
-        save_cache(cache)
-
-        return summary
-
+        summary = _call_model(MODEL, text)
     except Exception as e:
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-            print(f"Quota exceeded for {description_id}, retrying with gemini-2.0-flash...")
+            print(f"Quota exceeded for {description_id}, retrying with gemini-2.0-flash-lite...")
             try:
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash-lite",
-                    contents=[user_prompt],
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                    ),
-                )
-                summary = response.text.strip()
-                cache[str(description_id)] = summary
-                save_cache(cache)
-                return summary
-           except Exception as fallback_e:
+                summary = _call_model("gemini-2.0-flash-lite", text)
+            except Exception as fallback_e:
                 print(f"Fallback model also failed for {description_id}: {fallback_e}")
                 return None
+        else:
+            print(f"An error occurred during API call for text {description_id}: {e}")
+            return None
 
-        print(f"An error occurred during API call for text {description_id}: {e}")
+    cache[str(description_id)] = summary
+    save_cache(cache)
+    return summary
