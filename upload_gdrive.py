@@ -181,6 +181,11 @@ def upload_files(local_folder_path, pdf_file, address):
     folder_name = f"{title} {today}"
     if suburb:
         folder_name = f"{suburb} - {folder_name}"
+
+    cache = load_cache()
+    if folder_name in cache:
+        return cache[folder_name]
+
     # Authenticate
     service = authenticate()
 
@@ -214,4 +219,7 @@ def upload_files(local_folder_path, pdf_file, address):
             print(f"Error uploading {file_name}: {str(e)}")
 
     print(f"Done {local_folder_path}")
-    return make_public_link(service, folder_id)
+    link = make_public_link(service, folder_id)
+    cache[folder_name] = link
+    save_cache(cache)
+    return link
