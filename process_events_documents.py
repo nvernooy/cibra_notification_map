@@ -3,9 +3,10 @@
 import re
 import os
 import json
+import shutil
 import unicodedata
 from download_emails import CACHE_FILE
-from process_documents import format_address
+from process_documents import format_address, expired_date
 from upload_gdrive import upload_files
 
 # Well-known Cape Town venues → canonical address
@@ -185,6 +186,30 @@ def process_events_documents(path: str) -> list[dict]:
     title = parsed["title"]
     address = parsed["address"]
     event_date = parsed["event_date"]
+
+    # For date ranges like "13-15 April 2026", use the end date for expiry check
+    end_date_match = re.search(
+        r"(\d{1,2}(?:st|nd|rd|th)?)\s+"
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"(?:\s+(\d{4}))?",
+        event_date,
+        re.IGNORECASE,
+    )
+    if not end_date_match:
+        print(f"\n{email_id}: WARNING - could not extract date from '{event_date}' for expiry check")
+    if end_date_match:
+        day = re.sub(r"(st|nd|rd|th)$", "", end_date_match.group(1), flags=re.IGNORECASE)
+        month = end_date_match.group(2).capitalize()
+        year = end_date_match.group(3) or ""
+        end_date_str = f"{day} {month} {year}".strip()
+        try:
+            if expired_date(end_date_str):
+                print(f"\n{email_id}: DELETING - event date {event_date} expired")
+                shutil.rmtree(path)
+                return []
+        except Exception as e:
+            print(f"\n{email_id}: WARNING - could not check expiry for date '{event_date}': {e}")
+
     # Description: event name + venue for context
     description = f"{title} at {parsed['venue']}"
 
