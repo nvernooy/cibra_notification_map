@@ -77,11 +77,11 @@ KML_STYLES = """  <Style id="icon-1899-0288D1-normal">
 
 
 def _placemark_kml(item, style_id):
-    title = escape(item.get("title", ""))
-    address = escape(item.get("address", ""))
-    description = escape(item.get("description", ""))
-    closing_date = escape(item.get("closing_date", ""))
-    file_link = escape(item.get("file_link", ""))
+    title = escape(item.get("title") or "")
+    address = escape(item.get("address") or "")
+    description = escape(item.get("description") or "")
+    closing_date = escape(item.get("closing_date") or "")
+    file_link = escape(item.get("file_link") or "")
     description_html = (
         f"Address: {address}<br>"
         f"Description: {description}<br>"
