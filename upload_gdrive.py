@@ -16,6 +16,8 @@ from datetime import datetime
 
 # folder to create new folders under
 PARENT_FOLDER_ID = os.environ.get("PARENT_FOLDER_ID")
+# folder to store the KMZ map layers (stable file IDs for embedding)
+KMZ_FOLDER_ID = os.environ.get("KMZ_FOLDER_ID")
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 CACHE_FILE = "short_links.json"
 
@@ -163,6 +165,46 @@ def shorten_link(link):
     save_cache(cache)
 
     return short_url
+
+
+def upsert_kmz_layer(service, file_path, upload_name, folder_id):
+    """Upload a KMZ file to Drive, overwriting if it already exists (keeps same file ID/URL)."""
+    query = f"name = '{upload_name}' and '{folder_id}' in parents and trashed = false"
+    results = service.files().list(q=query, fields="files(id, name)").execute()
+    files = results.get("files", [])
+
+    media = MediaFileUpload(file_path, mimetype="application/vnd.google-earth.kmz", resumable=True)
+
+    if files:
+        file_id = files[0]["id"]
+        service.files().update(fileId=file_id, media_body=media).execute()
+        print(f"Updated {upload_name} (id: {file_id})")
+        return file_id
+    else:
+        file_metadata = {"name": upload_name, "parents": [folder_id]}
+        file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+        file_id = file.get("id")
+        # make publicly readable so KmlLayer can fetch it
+        service.permissions().create(
+            fileId=file_id, body={"type": "anyone", "role": "reader"}, fields="id"
+        ).execute()
+        print(f"Created {upload_name} (id: {file_id})")
+        return file_id
+
+
+def upload_kmz_layers(notice_kmz, public_kmz, events_kmz):
+    """Upsert all three KMZ layers to the stable Drive folder."""
+    if not KMZ_FOLDER_ID:
+        print("KMZ_FOLDER_ID not set — skipping KMZ upload")
+        return
+
+    service = authenticate()
+    for file_path, name in [
+        (notice_kmz, "notice.kmz"),
+        (public_kmz, "public.kmz"),
+        (events_kmz, "events.kmz"),
+    ]:
+        upsert_kmz_layer(service, file_path, name, KMZ_FOLDER_ID)
 
 
 def upload_files(local_folder_path, pdf_file, address):
