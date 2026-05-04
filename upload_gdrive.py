@@ -19,7 +19,8 @@ PARENT_FOLDER_ID = os.environ.get("PARENT_FOLDER_ID")
 # folder to store the KMZ map layers (stable file IDs for embedding)
 KMZ_FOLDER_ID = os.environ.get("KMZ_FOLDER_ID")
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-CACHE_FILE = "short_links.json"
+SHORT_LINKS_CACHE_FILE = "short_links.json"
+FOLDER_CACHE_FILE = "folder_links.json"
 
 
 def authenticate():
@@ -128,17 +129,15 @@ def upload_file(service, file_path, folder_id):
     return file.get("id")
 
 
-def load_cache():
-    """Load the generated tinyurl links for folders"""
-    if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE, "r") as f:
+def load_cache(cache_file):
+    if os.path.exists(cache_file):
+        with open(cache_file, "r") as f:
             return json.load(f)
     return {}
 
 
-def save_cache(cache):
-    """Save the generated tinyurl links for folders"""
-    with open(CACHE_FILE, "w") as f:
+def save_cache(cache, cache_file):
+    with open(cache_file, "w") as f:
         json.dump(cache, f, indent=2)
 
 
@@ -146,7 +145,7 @@ def shorten_link(link):
     """Shorten the link to the gdive folder using tinyurl"""
 
     # free tier only allows 100 urls a month
-    cache = load_cache()
+    cache = load_cache(SHORT_LINKS_CACHE_FILE)
     if link in cache:
         return cache[link]
 
@@ -162,7 +161,7 @@ def shorten_link(link):
     short_url = response.json()["data"]["tiny_url"]
 
     cache[link] = short_url
-    save_cache(cache)
+    save_cache(cache, SHORT_LINKS_CACHE_FILE)
 
     return short_url
 
@@ -224,7 +223,7 @@ def upload_files(local_folder_path, pdf_file, address):
     if suburb:
         folder_name = f"{suburb} - {folder_name}"
 
-    cache = load_cache()
+    cache = load_cache(FOLDER_CACHE_FILE)
     if folder_name in cache:
         return cache[folder_name]
 
@@ -263,5 +262,5 @@ def upload_files(local_folder_path, pdf_file, address):
     print(f"Done {local_folder_path}")
     link = make_public_link(service, folder_id)
     cache[folder_name] = link
-    save_cache(cache)
+    save_cache(cache, FOLDER_CACHE_FILE)
     return link
