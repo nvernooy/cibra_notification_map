@@ -11,4 +11,7 @@ __pycache__
 *.kml
 *.csv
 *.json
+*.geojson
+*.kmz
+*.html
 token.pickle
