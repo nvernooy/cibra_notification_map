@@ -155,10 +155,15 @@ def shorten_link(link):
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    print(link)
     payload = {"url": link, "domain": "tinyurl.com"}
-    response = requests.post(url, headers=headers, json=payload)
-    response.raise_for_status()
-    short_url = response.json()["data"]["tiny_url"]
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        short_url = response.json()["data"]["tiny_url"]
+    except Exception as e:
+        print(response.json())
+        raise e
 
     cache[link] = short_url
     save_cache(cache, SHORT_LINKS_CACHE_FILE)

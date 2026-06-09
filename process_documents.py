@@ -89,15 +89,26 @@ def process_documents(path):
 
 def expired_date(date_str: str, days=10) -> bool:
     """ Check if the string date is more than 10 days in the past """
-    formats = ["%d %b %Y", "%d %B %Y"]
-    
-    for fmt in formats:
+    formats_with_year = ["%d %b %Y", "%d %B %Y"]
+    formats_without_year = ["%d %b", "%d %B"]
+
+    date = None
+    for fmt in formats_with_year:
         try:
             date = datetime.strptime(date_str, fmt)
             break
         except ValueError:
             continue
-    else:
+
+    if date is None:
+        for fmt in formats_without_year:
+            try:
+                date = datetime.strptime(date_str, fmt).replace(year=datetime.now().year)
+                break
+            except ValueError:
+                continue
+
+    if date is None:
         raise ValueError(f"Invalid date format: {date_str}")
 
     return datetime.now() - date > timedelta(days=days)
