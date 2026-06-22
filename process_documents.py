@@ -113,8 +113,34 @@ def delete_if_expired(path, date_str):
     return False
 
 
+def read_email_body(path):
+    """Return the saved email body text, or '' (written by download_emails for no-attachment emails)."""
+    body_file = os.path.join(path, "body.txt")
+    try:
+        with open(body_file, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def extract_website_link(text):
+    """Return a participation website link from the body, or '' (e.g. consultant pages like infinityenv.co.za/...)."""
+    if not text:
+        return ""
+    # prefer an explicit "Website:" line, otherwise any URL
+    match = re.search(r"Website:\s*(\S+)", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"(https?://\S+|www\.\S+)", text, re.IGNORECASE)
+    if not match:
+        return ""
+    link = match.group(1).rstrip(".,);")
+    if link.lower().startswith("www."):
+        link = "https://" + link
+    return link
+
+
 def process_subject_fallback(path):
-    """Fallback when an email has no PDF attachments: derive the data from the subject line."""
+    """Fallback when an email has no PDF attachments: derive the data from the subject line (and body)."""
     document_data = []
 
     email_id = os.path.basename(path.rstrip("/"))
@@ -123,20 +149,31 @@ def process_subject_fallback(path):
         print(f"\n{email_id}: no subject found in cache")
         return document_data
 
-    # closing date from the subject, if present
-    closing_date = extract_closing_date_from_text(subject)
+    body = read_email_body(path)
+
+    # closing date from the subject, else the body
+    closing_date = extract_closing_date_from_text(subject) or extract_closing_date_from_text(body)
     if delete_if_expired(path, closing_date):
         return []
 
-    # address from the subject via AI
-    address = ai_extract_address(subject, path)
+    # address from the subject, falling back to the body
+    address = ai_extract_address(f"{subject}\n{body}".strip(), path)
     address = format_address(address)
     title = address.split(",")[0].strip()
 
     # description: summarise the subject for context
     description = ai_summarise_text(subject, email_id) if subject else subject
 
-    file_link = upload_files(path, "Notice", address)
+    # prefer a participation website link from the body; otherwise upload any real attachments
+    website = extract_website_link(body)
+    if website:
+        file_link = website
+    else:
+        attachments = [
+            f for f in os.listdir(path)
+            if os.path.isfile(os.path.join(path, f)) and f != "body.txt"
+        ]
+        file_link = upload_files(path, "Notice", address) if attachments else ""
 
     document_data.append({
         "filename": subject,
@@ -150,6 +187,7 @@ def process_subject_fallback(path):
     print(f"    Title:       {title}")
     print(f"    Address:     {address}")
     print(f"    Description: {description}")
+    print(f"    Link:        {file_link}")
 
     return document_data
 

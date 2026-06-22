@@ -205,6 +205,7 @@ def extract_urls(email, directory):
             print(f"  → Failed to download {url}: {e}")
     
     # fallback - try downloading attachments on email
+    downloaded = False
     if email["properties"].get("hs_attachment_ids"):
         attachment_ids = email["properties"]["hs_attachment_ids"].split(";")
 
@@ -239,9 +240,17 @@ def extract_urls(email, directory):
                 with open(filename, "wb") as out:
                     out.write(f_res.content)
                 print(f"  → Downloaded {name}")
+                downloaded = True
             except requests.exceptions.HTTPError as err:
                 print(f"  → Failed to download file {file_id}: {err}")
                 continue
+
+    # no attachments (e.g. link-only public participation emails): save the body
+    # so processing can fall back to the subject/body and any website link
+    if not downloaded and email_text:
+        os.makedirs(email_dir, exist_ok=True)
+        with open(os.path.join(email_dir, "body.txt"), "w", encoding="utf-8") as out:
+            out.write(email_text)
 
 
 def unzip_files(filename):
