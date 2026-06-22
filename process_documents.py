@@ -117,9 +117,10 @@ def process_subject_fallback(path):
     """Fallback when an email has no PDF attachments: derive the data from the subject line."""
     document_data = []
 
+    email_id = os.path.basename(path.rstrip("/"))
     subject = get_email_subject(path)
     if not subject:
-        print(f"\n{os.path.basename(path.rstrip('/'))}: no subject found in cache")
+        print(f"\n{email_id}: no subject found in cache")
         return document_data
 
     # closing date from the subject, if present
