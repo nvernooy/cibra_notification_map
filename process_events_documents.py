@@ -2,11 +2,8 @@
 
 import re
 import os
-import json
-import shutil
 import unicodedata
-from download_emails import CACHE_FILE
-from process_documents import format_address, expired_date
+from process_documents import format_address, get_email_subject, delete_if_expired
 from upload_gdrive import upload_files
 
 # Well-known Cape Town venues → canonical address
@@ -169,11 +166,8 @@ def process_events_documents(path: str) -> list[dict]:
     Uses only regex — no AI/API calls.  Returns a list with one item on
     success, or an empty list when the subject cannot be parsed.
     """
-    with open(CACHE_FILE, "r") as f:
-        subject_list = json.load(f)
-
     email_id = os.path.basename(path)
-    subject = subject_list.get(email_id, "")
+    subject = get_email_subject(path)
     if not subject:
         print(f"\n{email_id}: no subject found in cache")
         return []
@@ -197,18 +191,13 @@ def process_events_documents(path: str) -> list[dict]:
     )
     if not end_date_match:
         print(f"\n{email_id}: WARNING - could not extract date from '{event_date}' for expiry check")
-    if end_date_match:
+    else:
         day = re.sub(r"(st|nd|rd|th)$", "", end_date_match.group(1), flags=re.IGNORECASE)
         month = end_date_match.group(2).capitalize()
         year = end_date_match.group(3) or ""
         end_date_str = f"{day} {month} {year}".strip()
-        try:
-            if expired_date(end_date_str):
-                print(f"\n{email_id}: DELETING - event date {event_date} expired")
-                shutil.rmtree(path)
-                return []
-        except Exception as e:
-            print(f"\n{email_id}: WARNING - could not check expiry for date '{event_date}': {e}")
+        if delete_if_expired(path, end_date_str):
+            return []
 
     # Description: event name + venue for context
     description = f"{title} at {parsed['venue']}"

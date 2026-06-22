@@ -10,6 +10,7 @@ from ai_extract_address import ai_extract_address
 from datetime import datetime, timedelta
 import signal
 import shutil
+from download_emails import CACHE_FILE
 
 # Regex patterns
 address_pattern = re.compile(
@@ -35,8 +36,8 @@ def process_documents(path):
 
     pdf_files = documents_path.glob("*.pdf")
     if next(pdf_files, None) is None:
-        print(f"{path}: WARNING NO PDF ATTACHEMENTS")
-        return document_data
+        print(f"{path}: WARNING NO PDF ATTACHEMENTS - falling back to subject")
+        return process_subject_fallback(path)
 
     for pdf_file in pdf_files:
         # only match the Notice or Advertising Notice pdfs
@@ -85,6 +86,82 @@ def process_documents(path):
                 break
 
     return document_data
+
+
+def get_email_subject(path):
+    """Return the cached subject line for an email directory, or ''."""
+    try:
+        with open(CACHE_FILE, "r") as f:
+            subject_list = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        subject_list = {}
+    email_id = os.path.basename(path.rstrip("/"))
+    return subject_list.get(email_id, "").strip()
+
+
+def delete_if_expired(path, date_str):
+    """Delete the email dir and return True if date_str is an expired closing date."""
+    if not date_str:
+        return False
+    try:
+        if expired_date(date_str):
+            print(f"\n{os.path.basename(path.rstrip('/'))}: DELETING - date {date_str} expired")
+            shutil.rmtree(path)
+            return True
+    except Exception as e:
+        print(f"\n{os.path.basename(path.rstrip('/'))}: WARNING - could not check expiry for '{date_str}': {e}")
+    return False
+
+
+def process_subject_fallback(path):
+    """Fallback when an email has no PDF attachments: derive the data from the subject line."""
+    document_data = []
+
+    subject = get_email_subject(path)
+    if not subject:
+        print(f"\n{os.path.basename(path.rstrip('/'))}: no subject found in cache")
+        return document_data
+
+    # closing date from the subject, if present
+    closing_date = extract_closing_date_from_text(subject)
+    if delete_if_expired(path, closing_date):
+        return []
+
+    # address from the subject via AI
+    address = ai_extract_address(subject, path)
+    address = format_address(address)
+    title = address.split(",")[0].strip()
+
+    # description: summarise the subject for context
+    description = ai_summarise_text(subject, email_id) if subject else subject
+
+    file_link = upload_files(path, "Notice", address)
+
+    document_data.append({
+        "filename": subject,
+        "address": address,
+        "title": title,
+        "description": description,
+        "closing_date": closing_date,
+        "file_link": file_link,
+    })
+    print(f"\n{subject}:")
+    print(f"    Title:       {title}")
+    print(f"    Address:     {address}")
+    print(f"    Description: {description}")
+
+    return document_data
+
+
+def extract_closing_date_from_text(text):
+    """Find a '<day> <Month> <year>' date in free text, return camel-cased or ''."""
+    date_pattern = re.compile(
+        r'\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|'
+        r'September|October|November|December)\s+\d{4})\b',
+        re.IGNORECASE,
+    )
+    match = date_pattern.search(text)
+    return camel_case_word(match.group(1)) if match else ""
 
 
 def expired_date(date_str: str, days=10) -> bool:
