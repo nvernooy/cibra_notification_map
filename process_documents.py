@@ -134,6 +134,13 @@ def extract_website_link(text):
     if not match:
         return ""
     link = match.group(1).rstrip(".,);")
+    # body may contain a markdown/HTML hyperlink like **[www.example.co.za/path](https://redirect-url)
+    # prefer the display text when it looks like a real domain URL
+    md_match = re.match(r'\*{0,2}\[([^\]]+)\]', link)
+    if md_match:
+        display = md_match.group(1).strip("* ")
+        if re.match(r'[\w.-]+\.\w{2,}', display):
+            link = display
     if link.lower().startswith("www."):
         link = "https://" + link
     return link
@@ -160,6 +167,10 @@ def process_subject_fallback(path):
     address = ai_extract_address(f"{subject}\n{body}".strip(), path)
     address = format_address(address)
     title = address.split(",")[0].strip()
+    if not title:
+        # no address extracted — derive title from the subject by stripping common preambles
+        title = re.sub(r'^(notification of public participation[:\s\-]*|w77\s*\|\s*)', '', subject, flags=re.IGNORECASE).strip()
+        title = title[:100]
 
     # description: summarise the subject for context
     description = ai_summarise_text(subject, email_id) if subject else subject

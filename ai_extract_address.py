@@ -86,8 +86,9 @@ def ai_extract_address(text: str, text_id):
     try:
         result = _call_model(MODEL, text)
     except Exception as e:
-        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-            print(f"Quota exceeded for {text_id}, retrying with gemini-2.0-flash-lite...")
+        e_str = str(e)
+        if "429" in e_str or "RESOURCE_EXHAUSTED" in e_str or "503" in e_str or "UNAVAILABLE" in e_str:
+            print(f"Model unavailable for {text_id}, retrying with gemini-2.0-flash-lite...")
             try:
                 result = _call_model("gemini-2.0-flash-lite", text)
             except Exception as fallback_e:
