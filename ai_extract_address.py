@@ -20,7 +20,7 @@ except Exception as e:
 MODEL = "gemini-2.5-flash"
 # System instruction to define the model's persona and primary task
 SYSTEM_INSTRUCTION = (
-    "Extract all street names or addresses from the text. Return only the extracted names, nothing else. If none found, return nothing."
+    "Extract all street names or addresses from the text. Return only the extracted names, nothing else. If none found, return nothing. If the text is a filename, return nothing"
 )
 MAX_INPUT_CHARS = 2000
 CACHE_FILE = "addresses.json"

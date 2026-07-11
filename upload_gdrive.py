@@ -162,8 +162,8 @@ def shorten_link(link):
         response.raise_for_status()
         short_url = response.json()["data"]["tiny_url"]
     except Exception as e:
-        print(response.json())
-        raise e
+        print("Error shortening url - returning long url: %s " % response.json())
+        return url
 
     cache[link] = short_url
     save_cache(cache, SHORT_LINKS_CACHE_FILE)

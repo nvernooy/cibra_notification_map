@@ -242,11 +242,15 @@ def expired_date(date_str: str, days=10) -> bool:
 
 
 def extract_address(pages, attempt=0):
-    """ 
-    Get the address from  the pdf page
-    Usually in the format 'Description and physical address'
     """
-    # check first page and second page
+    Get the address from the pdf page.
+    Usually in the format 'Description and physical address', but some documents
+    (e.g. billboard/signage applications) instead embed it in a heading like:
+    'APPLICATION TO ERECT ... AT ERF: 148638, 7 ADDERLEY STREET, FORESHORE'
+    """
+    if attempt >= len(pages):
+        return ""
+
     first_page = pages[attempt]
     words = first_page.extract_words()
 
@@ -257,35 +261,60 @@ def extract_address(pages, attempt=0):
         lines[top].append((w["x0"], w["text"]))
     sorted_tops = sorted(lines.keys())
 
-    # Find the label line
+    line_texts = {top: " ".join(text for _, text in sorted(lines[top])) for top in sorted_tops}
+
+    # --- Attempt 1: labelled "physical address" style ---
     label_top = None
     for top in sorted_tops:
-        line_text = " ".join(text for _, text in sorted(lines[top]))
-        # in format Description and physical address, sometimes just physical address
-        if "and" in line_text.lower() and "physical" in line_text.lower() and "address" in line_text.lower():
+        line_text = line_texts[top].lower()
+        if "and" in line_text and "physical" in line_text and "address" in line_text:
             label_top = top
             break
 
-    # try the second page
-    if label_top is None: 
-        if len(pages) < (attempt + 1):
-            return extract_address(pages, attempt + 1)
-        else:
-            return ""
+    if label_top is not None:
+        address_lines = []
+        for top in sorted_tops:
+            if top > label_top:
+                line_text = line_texts[top]
+                if line_text.strip():
+                    address_lines.append(line_text)
+                    if any(c.isdigit() for c in line_text):
+                        break
+        if address_lines:
+            return format_address(" ".join(address_lines))
 
-    # Find the next non-empty line(s) below the label
-    address_lines = []
-    for top in sorted_tops:
-        if top > label_top:
-            line_text = " ".join(text for _, text in sorted(lines[top]))
-            if line_text.strip():
-                address_lines.append(line_text)
-                # Stop after first line with numbers (street number)
-                if any(c.isdigit() for c in line_text):
+    # --- Attempt 2: "AT ERF: <number>, <address>" embedded in a heading line ---
+    erf_start_pattern = re.compile(r'\bAT\s+ERF:?\s*\d+\s*,', re.IGNORECASE)
+
+    for idx, top in enumerate(sorted_tops):
+        text = line_texts[top]
+        if erf_start_pattern.search(text):
+            # Join this line with subsequent lines until we hit a new field/heading
+            # (e.g. "APPLICANT:") or run out of lines, to capture wrapped address text
+            combined = text
+            for next_top in sorted_tops[idx + 1:]:
+                next_text = line_texts[next_top]
+                # Stop if it looks like a new labelled field (e.g. "APPLICANT:")
+                if re.match(r'^[A-Z ]+:', next_text.strip()):
+                    break
+                # Stop if we've already reached a blank-ish gap (heading ended)
+                if not next_text.strip():
+                    break
+                combined += " " + next_text
+                # Stop once we have letters after the erf number (address text found)
+                if re.search(r'\bAT\s+ERF:?\s*\d+\s*,\s*[^,]*[A-Za-z]', combined, re.IGNORECASE):
                     break
 
-    address =  " ".join(address_lines) if address_lines else ""
-    return format_address(address)
+            match = re.search(r'\bAT\s+ERF:?\s*\d+\s*,\s*(.+)', combined, re.IGNORECASE)
+            if match:
+                return format_address(match.group(1).strip())
+
+    # --- Try next page if nothing found on this one ---
+    if attempt + 1 < len(pages):
+        return extract_address(pages, attempt + 1)
+
+    return ""
+
 
 def format_address(address):
     if not address:
@@ -412,6 +441,10 @@ def extract_closing_date(pages):
         r'on\s+or\s+before\s+(' + date_pattern.pattern + r')',
         re.IGNORECASE
     )
+    working_days_pattern = re.compile(
+        r'(\d+)\s+working\s+days',
+        re.IGNORECASE
+    )
 
     for page in pages:
         words = page.extract_words()
@@ -455,6 +488,55 @@ def extract_closing_date(pages):
         match = on_or_before_pattern.search(text)
         if match:
             return camel_case_word(match.group(1))
+
+    # Fallback 2: no explicit closing date — compute from header "Date:" + N working days
+    for page in pages:
+        text = page.extract_text() or ""
+        wd_match = working_days_pattern.search(text)
+        if wd_match:
+            num_days = int(wd_match.group(1))
+            header_date = extract_header_date(pages, date_pattern)
+            if header_date:
+                closing = add_working_days(header_date, num_days)
+                return camel_case_word(closing.strftime("%d %B %Y"))
+
+
+def extract_header_date(pages, date_pattern):
+    """
+    Look for a labelled 'Date:' field near the top of the first page
+    (e.g. 'Date: 10 July 2026') and return it as a datetime object.
+    """
+    labelled_date_pattern = re.compile(
+        r'Date\s*:?\s*(' + date_pattern.pattern + r')',
+        re.IGNORECASE
+    )
+
+    if not pages:
+        return None
+
+    first_page = pages[0]
+    text = first_page.extract_text() or ""
+
+    match = labelled_date_pattern.search(text)
+    if match:
+        day, month, year = match.group(2), match.group(3), match.group(4)
+        try:
+            return datetime.strptime(f"{day} {month} {year}", "%d %B %Y")
+        except ValueError:
+            return None
+    return None
+
+
+def add_working_days(start_date, num_days):
+    """Add N working days (Mon-Fri) to a date, excluding weekends only."""
+    current = start_date
+    added = 0
+    while added < num_days:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # Mon-Fri
+            added += 1
+    return current
+
 
 def camel_case_word(words):
     """ Camel case the words """
