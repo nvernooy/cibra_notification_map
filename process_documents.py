@@ -52,10 +52,10 @@ def process_documents(path):
                 if not closing_date:
                     print(f"\n{pdf_file.name}: WARNING NO DATE")
                     continue
-                elif expired_date(closing_date):
-                    # check if closing date far in the past
-                    print(f"\n{pdf_file.name}: DELETING - closing date {closing_date} expired")
-                    shutil.rmtree(documents_path)
+                elif delete_if_expired(documents_path, closing_date):
+                    # # check if closing date far in the past
+                    # print(f"\n{pdf_file.name}: DELETING - closing date {closing_date} expired")
+                    # shutil.rmtree(documents_path)
                     return []
 
                 # Extract address
@@ -82,8 +82,8 @@ def process_documents(path):
                 })
                 print(f"\n{path}/{pdf_file.name}:")
                 print(f"    Title:       {title}")
-                print(f"    Description: {description}")
-                print(f"    Address:     {address}")
+                # print(f"    Description: {description}")
+                # print(f"    Address:     {address}")
                 print(f"    Closing:     {closing_date}")
                 break
 
@@ -104,14 +104,17 @@ def get_email_subject(path):
 def delete_if_expired(path, date_str):
     """Delete the email dir and return True if date_str is an expired closing date."""
     if not date_str:
+        print(f"{path}: WARNING - no date, skipping expiry check")
         return False
     try:
-        if expired_date(date_str):
-            print(f"\n{os.path.basename(path.rstrip('/'))}: DELETING - date {date_str} expired")
+        if expired_date(path, date_str):
+            print(f"{path}: DELETING - date {date_str} expired")
             shutil.rmtree(path)
             return True
+        # check for far future dates
+        return future_date(date_str)
     except Exception as e:
-        print(f"\n{os.path.basename(path.rstrip('/'))}: WARNING - could not check expiry for '{date_str}': {e}")
+        print(f"{path}: WARNING - could not check expiry for '{date_str}': {e}")
     return False
 
 
@@ -200,7 +203,7 @@ def process_subject_fallback(path):
     print(f"    Title:       {title}")
     print(f"    Address:     {address}")
     print(f"    Description: {description}")
-    print(f"    Link:        {file_link}")
+    print(f"    Closing:     {closing_date}")
 
     return document_data
 
@@ -216,8 +219,9 @@ def extract_closing_date_from_text(text):
     return camel_case_word(match.group(1)) if match else ""
 
 
-def expired_date(date_str: str, days=10) -> bool:
-    """ Check if the string date is more than 10 days in the past """
+def parse_date_str(date_str: str) -> datetime:
+    """ Parse a date string in 'D Mon [Year]' or 'D Month [Year]' format.
+    If no year is given, defaults to the current year. """
     formats_with_year = ["%d %b %Y", "%d %B %Y"]
     formats_without_year = ["%d %b", "%d %B"]
 
@@ -240,7 +244,25 @@ def expired_date(date_str: str, days=10) -> bool:
     if date is None:
         raise ValueError(f"Invalid date format: {date_str}")
 
+    return date
+
+
+def expired_date(path, date_str: str, days=10) -> bool:
+    """ Check if the string date is more than `days` in the past """
+    date = parse_date_str(date_str)
+
+    # tighter date for events
+    if "events_emails" in str(path):
+        days = 3
+
     return datetime.now() - date > timedelta(days=days)
+
+
+def future_date(date_str: str, days=60) -> bool:
+    """ Check if the string date is more than `days` days in the future """
+    date = parse_date_str(date_str)
+
+    return date > datetime.now() + timedelta(days=days)
 
 
 def extract_address(pages, attempt=0):
@@ -363,9 +385,6 @@ def extract_description(pages, description_id):
     capture = False
     purpose_found = False  # track whether the primary pattern ever matched
 
-    print("\txtract description")
-    print("description_id", description_id)
-
     # multi page descriptions
     for i, page in enumerate(pages):
         if i >= 6:
@@ -467,7 +486,6 @@ def extract_description(pages, description_id):
                 application_top = 0
 
     # clean up
-    print("raw", raw_text)
     raw_text = raw_text.replace('\n', '. ')
     raw_text = re.sub(r'“.*?”', '', raw_text, flags=re.DOTALL)
     raw_text = raw_text.replace(':.', ':')

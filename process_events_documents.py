@@ -206,9 +206,9 @@ def process_events_documents(path: str) -> list[dict]:
 
     print(f"\n{subject}:")
     print(f"    Title:       {title}")
-    print(f"    Venue:       {parsed['venue']}")
-    print(f"    Address:     {address}")
-    print(f"    Date:        {event_date}")
+    # print(f"    Venue:       {parsed['venue']}")
+    # print(f"    Address:     {address}")
+    print(f"    Closing:     {event_date}")
 
     return [{
         "filename": subject,
