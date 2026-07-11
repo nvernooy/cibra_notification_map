@@ -18,7 +18,7 @@ os.makedirs(EVENTS_DIR, exist_ok=True)
 # date from when to find emails
 cuttoff_year = 2026
 cuttoff_month = 6
-cuttoff_day = 1
+cuttoff_day = 18
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -197,7 +197,7 @@ def extract_urls(email, directory):
 
             with open(filename, "wb") as out:
                 out.write(file_res.content)
-            print(f"  → Downloaded {filename}")
+            # print(f"  → Downloaded {filename}")
             # extract zip file
             unzip_files(f"{email_dir}/attachments.zip")
             return
@@ -239,7 +239,7 @@ def extract_urls(email, directory):
 
                 with open(filename, "wb") as out:
                     out.write(f_res.content)
-                print(f"  → Downloaded {name}")
+                # print(f"  → Downloaded {name}")
                 downloaded = True
             except requests.exceptions.HTTPError as err:
                 print(f"  → Failed to download file {file_id}: {err}")

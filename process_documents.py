@@ -80,9 +80,11 @@ def process_documents(path):
                     "closing_date": closing_date,
                     "file_link": file_link
                 })
-                print(f"\n{path}{pdf_file.name}:")
+                print(f"\n{path}/{pdf_file.name}:")
                 print(f"    Title:       {title}")
                 print(f"    Description: {description}")
+                print(f"    Address:     {address}")
+                print(f"    Closing:     {closing_date}")
                 break
 
     return document_data
@@ -344,45 +346,53 @@ def format_address(address):
 
     return _patch_addresss(address)
 
+def _words_match_phrase(words, start_idx, phrase_words):
+    """Check if words starting at start_idx match phrase_words (case-insensitive)."""
+    if start_idx + len(phrase_words) > len(words):
+        return False
+    for offset, expected in enumerate(phrase_words):
+        if words[start_idx + offset]["text"].strip(",.:;").lower() != expected.lower():
+            return False
+    return True
+
+
 def extract_description(pages, description_id):
     # Extract description
     # Find top coordinate of "Purpose of the application" up until "Enquiries"
     raw_text = ""
     capture = False
+    purpose_found = False  # track whether the primary pattern ever matched
+
+    print("\txtract description")
+    print("description_id", description_id)
 
     # multi page descriptions
     for i, page in enumerate(pages):
-        # dont go through too many pages
         if i >= 6:
             break
         words = []
         try:
-            # Set a 30-second timeout for pdfplumber corrupted pages
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(30)
-            
             words = page.extract_words()
-            # Cancel the alarm
             signal.alarm(0)
-            
         except (TimeoutException, Exception) as e:
             print(f"Error processing {description_id}: {e}")
             continue
-            
+
         page_text = ""
         purpose_top = 0
         for i, w in enumerate(words):
             text = w["text"]
 
-            # Start capture from title format 'Purpose of the application'
             if not capture and text == "Purpose" and i + 3 < len(words):
                 next_words = " ".join(w2["text"].lower() for w2 in words[i:i+4])
                 if "purpose of the application" in next_words.lower():
                     capture = True
+                    purpose_found = True
                     purpose_top = w["top"]
                     continue
 
-            # Stop capture at Enquiries
             if capture and text == "Enquiries":
                 enquiries_top = w["top"]
                 x0, x1 = 50, 500
@@ -394,7 +404,6 @@ def extract_description(pages, description_id):
                 capture = False
                 break
 
-        # If still capturing and not found "Enquiries", grab whole lower part and end
         if capture:
             x0, x1 = 50, 500
             y0 = purpose_top + 10
@@ -402,10 +411,63 @@ def extract_description(pages, description_id):
             area = page.within_bbox((x0, y0, x1, y1))
             page_text = area.extract_text() or ""
             raw_text += "\n" + page_text
-            purpose_top = 0  # reset top for next page
+            purpose_top = 0
+
+    # --- Fallback: "APPLICATION ..." heading through to "comments or objections" ---
+    # Only run if the primary "Purpose of the application" pattern was never found,
+    # e.g. billboard/signage-style applications that open with an
+    # "APPLICATION TO ERECT ..." heading instead.
+    if not purpose_found:
+        raw_text = ""
+        capture = False
+        end_phrase = ["comments", "or", "objections"]
+
+        for i, page in enumerate(pages):
+            if i >= 6:
+                break
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+                words = page.extract_words()
+                signal.alarm(0)
+            except (TimeoutException, Exception) as e:
+                print(f"Error processing {description_id}: {e}")
+                continue
+
+            application_top = 0
+            for idx, w in enumerate(words):
+                text = w["text"]
+
+                # Start capture at an "APPLICATION" heading (all-caps, to avoid
+                # matching stray occurrences like "...this application was...")
+                if not capture and text.upper() == text and text.strip(",.:;") == "APPLICATION":
+                    capture = True
+                    application_top = w["top"]
+                    continue
+
+                # Stop capture once "comments or objections" is found
+                if capture and _words_match_phrase(words, idx, end_phrase):
+                    end_top = w["top"]
+                    x0, x1 = 50, 500
+                    y0 = application_top - 5
+                    y1 = end_top - 5  # stop before the "comments or objections" line
+                    area = page.within_bbox((x0, y0, x1, y1))
+                    page_text = area.extract_text() or ""
+                    raw_text += "\n" + page_text
+                    capture = False
+                    break
+
+            if capture:
+                x0, x1 = 50, 500
+                y0 = application_top - 5
+                y1 = page.height
+                area = page.within_bbox((x0, y0, x1, y1))
+                page_text = area.extract_text() or ""
+                raw_text += "\n" + page_text
+                application_top = 0
 
     # clean up
-    # Remove newlines
+    print("raw", raw_text)
     raw_text = raw_text.replace('\n', '. ')
     raw_text = re.sub(r'“.*?”', '', raw_text, flags=re.DOTALL)
     raw_text = raw_text.replace(':.', ':')
