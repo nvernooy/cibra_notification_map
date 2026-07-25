@@ -34,28 +34,29 @@ def process_documents(path):
     documents_path = Path(path)
     document_data = []
 
-    pdf_files = documents_path.glob("*.pdf")
-    if next(pdf_files, None) is None:
-        print(f"{path}: WARNING NO PDF ATTACHEMENTS - falling back to subject")
+    # only match the Notice or Advertising Notice or Motivation pdfs
+    pdf_files = [
+        f for f in documents_path.glob("*.pdf")
+        if f.name.lower().startswith("notice")
+        or "advertising" in f.name.lower()
+        or "public" in f.name.lower()
+        or "motivation" in f.name.lower()
+    ]
+
+    if not pdf_files:
+        print(f"{path}: WARNING NO MATCHING PDF ATTACHMENTS - falling back to subject")
         return process_subject_fallback(path)
 
     for pdf_file in pdf_files:
-        # only match the Notice or Advertising Notice pdfs
-        file_name = pdf_file.name.lower()
-        if not (file_name.startswith("notice") or "advertising" in file_name or "public" in file_name):
-            continue
         with pdfplumber.open(pdf_file) as pdf:
             pages = pdf.pages
             if pages:
                 # extract closing date
                 closing_date = extract_closing_date(pages)
                 if not closing_date:
-                    print(f"\n{pdf_file.name}: WARNING NO DATE")
+                    print(f"\n{pdf_file.name}: WARNING NO DATE - skipping")
                     continue
                 elif delete_if_expired(documents_path, closing_date):
-                    # # check if closing date far in the past
-                    # print(f"\n{pdf_file.name}: DELETING - closing date {closing_date} expired")
-                    # shutil.rmtree(documents_path)
                     return []
 
                 # Extract address
@@ -66,7 +67,7 @@ def process_documents(path):
                     address = format_address(address)
                 # title is just street location
                 title = address.split(",")[0].strip()
-                # extract description
+                extract description
                 description = extract_description(pages, path)
 
                 # upload all the attachments from the email to the google drive
@@ -177,8 +178,8 @@ def process_subject_fallback(path):
         title = re.sub(r'^(notification of public participation[:\s\-]*|w77\s*\|\s*)', '', subject, flags=re.IGNORECASE).strip()
         title = title[:100]
 
-    # description: summarise the subject for context
-    description = ai_summarise_text(subject, email_id) if subject else subject
+    # description: use the subject for context
+    description = subject
 
     # prefer a participation website link from the body; otherwise upload any real attachments
     website = extract_website_link(body)
