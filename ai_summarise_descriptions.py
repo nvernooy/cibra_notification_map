@@ -17,8 +17,8 @@ except Exception as e:
     exit()
 
 # Define the model to use
-MODEL = "gemini-2.5-flash"
-FALLBACK_MODEL = "gemini-3.5-flash-lite"
+MODEL = "gemini-3.5-flash-lite"
+FALLBACK_MODEL = "gemini-3.1-flash-lite"
 # System instruction to define the model's persona and primary task
 SYSTEM_INSTRUCTION = (
     "Summarize the provided text in at most two sentences. Be concise, impersonal, and objective. "

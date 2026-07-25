@@ -117,12 +117,21 @@ def list_emails():
             or "automatic reply" in subject.lower()
             or "panel application" in subject.lower()
             or subject.lower().startswith("form")
+            or "membership form" in subject.lower()
             or "[cibra.co.za]" in subject
             or "Sucuri Alert" in subject
             or "Weekly WP Mail SMTP Summary" in subject
             or "[Cape Town City Bowl Ratepayers' and Residents' Association (CIBRA)]" in subject
             or "Notice of Payment" in subject
             or "Notice of No Objection" in subject
+            or "ignore" in subject.lower()
+            or "test" in subject.lower()
+            or "afrihost" in subject.lower()
+            or "survey" in subject.lower()
+            or "report domain" in subject.lower()
+            or "web service" in subject.lower()
+            or "clientzone" in subject.lower()
+            or "heritage portal" in subject.lower()
         ):
             # if not (
             #     "fwd" in subject.lower()
@@ -162,7 +171,7 @@ def list_emails():
 
 
 def download_email(email, subject, directory):
-    print(f"Matched Email {email["id"]}:\t{subject}")
+    # print(f"Matched Email {email["id"]}:\t{subject}")
 
     # store id and subject line
     subjects_list = load_cache()

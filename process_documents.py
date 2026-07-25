@@ -39,13 +39,10 @@ def process_documents(path):
         f for f in documents_path.glob("*.pdf")
         if f.name.lower().startswith("notice")
         or "advertising" in f.name.lower()
+        or "advert notice" in f.name.lower()
         or "public" in f.name.lower()
         or "motivation" in f.name.lower()
     ]
-
-    if not pdf_files:
-        print(f"{path}: WARNING NO MATCHING PDF ATTACHMENTS - falling back to subject")
-        return process_subject_fallback(path)
 
     for pdf_file in pdf_files:
         with pdfplumber.open(pdf_file) as pdf:
@@ -54,7 +51,7 @@ def process_documents(path):
                 # extract closing date
                 closing_date = extract_closing_date(pages)
                 if not closing_date:
-                    print(f"\n{pdf_file.name}: WARNING NO DATE - skipping")
+                    print(f"{path}/{pdf_file.name}: no date - skipping")
                     continue
                 elif delete_if_expired(documents_path, closing_date):
                     return []
@@ -67,7 +64,7 @@ def process_documents(path):
                     address = format_address(address)
                 # title is just street location
                 title = address.split(",")[0].strip()
-                extract description
+                # extract description
                 description = extract_description(pages, path)
 
                 # upload all the attachments from the email to the google drive
@@ -81,13 +78,69 @@ def process_documents(path):
                     "closing_date": closing_date,
                     "file_link": file_link
                 })
-                print(f"\n{path}/{pdf_file.name}:")
+                print(f"{path}/{pdf_file.name}:")
                 print(f"    Title:       {title}")
                 # print(f"    Description: {description}")
                 # print(f"    Address:     {address}")
-                print(f"    Closing:     {closing_date}")
+                print(f"    Closing:     {closing_date}\n")
                 break
 
+    if document_data:
+        return document_data
+
+    # retry with Motivation pdfs
+    pdf_files = [
+        f for f in documents_path.glob("*.pdf")
+        if "motivation" in f.name.lower()
+    ]
+
+    if not pdf_files:
+        print(f"{path}: WARNING NO MATCHING PDF ATTACHMENTS - falling back to subject")
+        return process_subject_fallback(path)
+
+    for pdf_file in pdf_files:
+        with pdfplumber.open(pdf_file) as pdf:
+            pages = pdf.pages
+            if pages:
+                # extract closing date
+                closing_date = extract_closing_date(pages)
+                if not closing_date:
+                    print(f"{path}/{pdf_file.name}: no date - skipping")
+                    continue
+                elif delete_if_expired(documents_path, closing_date):
+                    return []
+
+                # Extract address
+                address = extract_address(pages)
+                if not address:
+                    print(f"\n{pdf_file.name}: WARNING NO ADDRESS")
+                    address = ai_extract_address(pdf_file.name, path)
+                    address = format_address(address)
+                # title is just street location
+                title = address.split(",")[0].strip()
+                # extract description
+                description = extract_description(pages, path)
+
+                # upload all the attachments from the email to the google drive
+                file_link = upload_files(path, pdf_file, address)
+
+                document_data.append({
+                    "filename": pdf_file.name,
+                    "address": address,
+                    "title": title,
+                    "description": description,
+                    "closing_date": closing_date,
+                    "file_link": file_link
+                })
+                print(f"{path}/{pdf_file.name}:")
+                print(f"    Title:       {title}")
+                # print(f"    Description: {description}")
+                # print(f"    Address:     {address}")
+                print(f"    Closing:     {closing_date}\n")
+                break
+
+    if not document_data:
+        print(f"got nothing for {path}, {', '.join(f.name for f in pdf_files)}")
     return document_data
 
 
@@ -363,7 +416,7 @@ def format_address(address):
         # add cape town if missing
         if parts[len(parts)-1] != "Cape Town":
             parts.append("Cape Town")
-        new_address = ', '.join(parts)
+        new_address = ', '.join(part.strip() for part in parts if part.strip())
 
         return new_address
 
