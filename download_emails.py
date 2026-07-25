@@ -17,8 +17,8 @@ os.makedirs(EVENTS_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2026
-cuttoff_month = 6
-cuttoff_day = 12
+cuttoff_month = 7
+cuttoff_day = 10
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -121,7 +121,16 @@ def list_emails():
             or "Sucuri Alert" in subject
             or "Weekly WP Mail SMTP Summary" in subject
             or "[Cape Town City Bowl Ratepayers' and Residents' Association (CIBRA)]" in subject
+            or "Notice of Payment" in subject
+            or "Notice of No Objection" in subject
         ):
+            # if not (
+            #     "fwd" in subject.lower()
+            #     or "fw:" in subject.lower()
+            #     or "re:" in subject.lower()
+            #     or "Automatic reply" in subject.lower()
+            # ):
+            #     print(f"skipping {subject}")
             continue
 
         # hs_email_sender_email is forwarding email
@@ -140,7 +149,7 @@ def list_emails():
             continue
 
         # city notice emails for noticeboard
-        has_notice = re.search(r"notice", subject, re.IGNORECASE) 
+        has_notice = re.search(r"notice", subject, re.IGNORECASE)
         has_erf = re.search(r"erf\s+\d+", subject, re.IGNORECASE)
         has_case = re.search(r"case\s+\d+", subject, re.IGNORECASE)
         has_land_use = re.search(r"land\s+use", subject, re.IGNORECASE)
@@ -149,16 +158,17 @@ def list_emails():
             continue
 
         download_email(email, subject, NOTICE_DIR)
+        # print(f"Matched Email {email["id"]}:\t{subject}")
 
 
 def download_email(email, subject, directory):
-    # print(f"Matched Email {email["id"]}:\t{subject}")
-    
+    print(f"Matched Email {email["id"]}:\t{subject}")
+
     # store id and subject line
     subjects_list = load_cache()
     subjects_list[email["id"]] = subject
     save_cache(subjects_list)
-    
+
     try:
         # download the attachments
         extract_urls(email, directory)
@@ -203,7 +213,7 @@ def extract_urls(email, directory):
             return
         except Exception as e:
             print(f"  → Failed to download {url}: {e}")
-    
+
     # fallback - try downloading attachments on email
     downloaded = False
     if email["properties"].get("hs_attachment_ids"):
