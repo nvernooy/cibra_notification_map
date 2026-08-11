@@ -17,8 +17,8 @@ os.makedirs(EVENTS_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2026
-cuttoff_month = 7
-cuttoff_day = 10
+cuttoff_month = 8
+cuttoff_day = 6
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -199,6 +199,7 @@ def extract_urls(email, directory):
     if os.path.exists(email_dir):
         return
 
+    downloaded = False
     # Extract only the BigFilesAccess download URL if it exists in the text
     zip_url_match = re.search(
         r"https://web1\.capetown\.gov\.za/web1/BigFilesAccess/DownloadBigFile\.aspx\?file=[a-f0-9\-]+",
@@ -212,19 +213,17 @@ def extract_urls(email, directory):
 
             os.makedirs(email_dir, exist_ok=True)
             # download zip file
-            filename = os.path.join(email_dir, f"attachments.zip")
+            filename = os.path.join(email_dir, "attachments.zip")
 
             with open(filename, "wb") as out:
                 out.write(file_res.content)
-            # print(f"  → Downloaded {filename}")
+            # print(f"  → Downloaded from zip {filename}")
             # extract zip file
-            unzip_files(f"{email_dir}/attachments.zip")
-            return
+            downloaded = unzip_files(f"{email_dir}/attachments.zip")
         except Exception as e:
             print(f"  → Failed to download {url}: {e}")
 
     # fallback - try downloading attachments on email
-    downloaded = False
     if email["properties"].get("hs_attachment_ids"):
         attachment_ids = email["properties"]["hs_attachment_ids"].split(";")
 
@@ -235,6 +234,7 @@ def extract_urls(email, directory):
 
             # Get file metadata and signed URL
             try:
+                filename = email_dir
                 res = requests.get(
                     f"https://api.hubapi.com/files/v3/files/{file_id}/signed-url",
                     headers=headers,
@@ -248,20 +248,23 @@ def extract_urls(email, directory):
                 if not url:
                     print(f"  → No signed URL for {file_id}")
                     continue
+                # check for zip and attachement overlap
+                filename = os.path.join(email_dir, filename)
+                if os.path.exists(filename):
+                    # print(f"  → Already exists, skipping download: {filename}")
+                    continue
 
                 # Download file
                 f_res = requests.get(url)
                 f_res.raise_for_status()
                 # Create email-specific directory
                 os.makedirs(email_dir, exist_ok=True)
-                filename = os.path.join(email_dir, filename)
-
                 with open(filename, "wb") as out:
                     out.write(f_res.content)
-                # print(f"  → Downloaded {name}")
+                # print(f"  → Downloaded from cdn {name}")
                 downloaded = True
             except requests.exceptions.HTTPError as err:
-                print(f"  → Failed to download file {file_id}: {err}")
+                print(f"  → WARNING: Failed to download attachment {filename}. Check if notice type and get manually")
                 continue
 
     # no attachments (e.g. link-only public participation emails): save the body
@@ -312,7 +315,7 @@ def unzip_files(filename):
 
         # If any of the targets already exist, assume archive already extracted -> do nothing
         if any(os.path.exists(t) for t in targets):
-            return
+            return True
 
         # Safe extraction: avoid zip-slip by validating final path starts with extract_dir
         for zi in z.infolist():
@@ -352,7 +355,9 @@ def unzip_files(filename):
                     if not chunk:
                         break
                     dst.write(chunk)
-
+    # cleanup zip
+    os.remove(filename)
+    return True
 
 if __name__ == "__main__":
     list_emails()
