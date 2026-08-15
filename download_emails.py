@@ -18,7 +18,7 @@ os.makedirs(EVENTS_DIR, exist_ok=True)
 # date from when to find emails
 cuttoff_year = 2026
 cuttoff_month = 8
-cuttoff_day = 6
+cuttoff_day = 10
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 

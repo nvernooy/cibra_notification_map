@@ -41,7 +41,6 @@ def process_documents(path):
         or "advertising" in f.name.lower()
         or "advert notice" in f.name.lower()
         or "public" in f.name.lower()
-        or "motivation" in f.name.lower()
     ]
 
     for pdf_file in pdf_files:
@@ -92,6 +91,7 @@ def process_documents(path):
     pdf_files = [
         f for f in documents_path.glob("*.pdf")
         if "motivation" in f.name.lower()
+        or "notice" in f.name.lower()
     ]
 
     if not pdf_files:
