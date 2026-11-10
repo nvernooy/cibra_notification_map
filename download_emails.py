@@ -132,6 +132,7 @@ def list_emails():
             or "web service" in subject.lower()
             or "clientzone" in subject.lower()
             or "heritage portal" in subject.lower()
+            or "out for comment" in subject.lower()
         ):
             # if not (
             #     "fwd" in subject.lower()
@@ -195,16 +196,17 @@ def extract_urls(email, directory):
     email_id = email["id"]
     email_dir = os.path.join(directory, email_id)
 
-    # Check if directory already exists - dont download again
-    if os.path.exists(email_dir):
-        return
-
+    dir_exists = os.path.exists(email_dir)
     downloaded = False
     # Extract only the BigFilesAccess download URL if it exists in the text
     zip_url_match = re.search(
         r"https://web1\.capetown\.gov\.za/web1/BigFilesAccess/DownloadBigFile\.aspx\?file=[a-f0-9\-]+",
         email_text,
     )
+    # zip emails are only fetched once; hubspot attachments are retried per file below
+    if dir_exists and (zip_url_match or not email["properties"].get("hs_attachment_ids")):
+        return
+
     if zip_url_match:
         url = zip_url_match.group(0)
         try:
@@ -251,7 +253,7 @@ def extract_urls(email, directory):
                 # check for zip and attachement overlap
                 filename = os.path.join(email_dir, filename)
                 if os.path.exists(filename):
-                    # print(f"  → Already exists, skipping download: {filename}")
+                    downloaded = True
                     continue
 
                 # Download file
@@ -264,7 +266,11 @@ def extract_urls(email, directory):
                 # print(f"  → Downloaded from cdn {name}")
                 downloaded = True
             except requests.exceptions.HTTPError as err:
-                print(f"  → WARNING: Failed to download attachment {filename}. Check if notice type and get manually")
+                print(
+                    f"  → WARNING: Failed to download attachment {file_id} for {email_dir}: {err}\n"
+                    f"    Download it manually from HubSpot and save it as: "
+                    f"{filename if filename != email_dir else email_dir + '/<original name>.pdf'}"
+                )
                 continue
 
     # no attachments (e.g. link-only public participation emails): save the body

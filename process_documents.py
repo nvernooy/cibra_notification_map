@@ -87,12 +87,12 @@ def process_documents(path):
     if document_data:
         return document_data
 
-    # retry with Motivation pdfs
-    pdf_files = [
-        f for f in documents_path.glob("*.pdf")
-        if "motivation" in f.name.lower()
-        or "notice" in f.name.lower()
-    ]
+    # retry with every other pdf, notice-like names first (e.g. "Erf 2330 Oranjezicht merged.pdf")
+    tried = set(pdf_files)
+    pdf_files = sorted(
+        (f for f in documents_path.glob("*.pdf") if f not in tried),
+        key=lambda f: not any(k in f.name.lower() for k in ("notice", "motivation", "merged")),
+    )
 
     if not pdf_files:
         print(f"{path}: WARNING NO MATCHING PDF ATTACHMENTS - falling back to subject")
@@ -140,7 +140,8 @@ def process_documents(path):
                 break
 
     if not document_data:
-        print(f"got nothing for {path}, {', '.join(f.name for f in pdf_files)}")
+        print(f"got nothing for {path}, {', '.join(f.name for f in pdf_files)} - falling back to subject")
+        return process_subject_fallback(path)
     return document_data
 
 
