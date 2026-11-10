@@ -52,6 +52,7 @@ def _call_model(model: str, text: str, retries: int = 4):
                 contents=[truncated],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0) if model.startswith("gemini-2.5") else None,
                 ),
             )
         except Exception as e:
