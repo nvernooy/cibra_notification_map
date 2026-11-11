@@ -6,6 +6,7 @@ import json
 import requests
 import datetime
 import zipfile
+from download_gmail import download_gmail_attachments
 
 HUBSPOT_TOKEN = os.environ.get("HUBSPOT_APP_TOKEN")
 NOTICE_DIR = "emails"
@@ -198,6 +199,7 @@ def extract_urls(email, directory):
 
     dir_exists = os.path.exists(email_dir)
     downloaded = False
+    failed = []
     # Extract only the BigFilesAccess download URL if it exists in the text
     zip_url_match = re.search(
         r"https://web1\.capetown\.gov\.za/web1/BigFilesAccess/DownloadBigFile\.aspx\?file=[a-f0-9\-]+",
@@ -266,12 +268,27 @@ def extract_urls(email, directory):
                 # print(f"  → Downloaded from cdn {name}")
                 downloaded = True
             except requests.exceptions.HTTPError as err:
-                print(
-                    f"  → WARNING: Failed to download attachment {file_id} for {email_dir}: {err}\n"
-                    f"    Download it manually from HubSpot and save it as: "
-                    f"{filename if filename != email_dir else email_dir + '/<original name>.pdf'}"
-                )
+                failed.append((file_id, filename, err))
                 continue
+
+    if failed:
+        gmail_paths = []
+        try:
+            props = email["properties"]
+            timestamp = datetime.datetime.fromisoformat(props["hs_timestamp"].replace("Z", "+00:00"))
+            gmail_paths = download_gmail_attachments(props.get("hs_email_subject") or "", timestamp, email_dir)
+        except Exception as e:
+            print(f"  → Gmail fallback failed for {email_dir}: {e}")
+        if gmail_paths:
+            downloaded = True
+        for file_id, filename, err in failed:
+            if os.path.exists(filename) or gmail_paths:
+                continue
+            print(
+                f"  → WARNING: Failed to download attachment {file_id} for {email_dir}: {err}\n"
+                f"    Download it manually from HubSpot and save it as: "
+                f"{filename if filename != email_dir else email_dir + '/<original name>.pdf'}"
+            )
 
     # no attachments (e.g. link-only public participation emails): save the body
     # so processing can fall back to the subject/body and any website link
