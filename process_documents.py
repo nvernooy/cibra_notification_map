@@ -23,6 +23,15 @@ close_date_pattern = re.compile(
     r"Closing date for objections, comments or representations\s*\n([\d\w\s]+)", re.IGNORECASE
 )
 
+NEXT_FIELD_LABELS = (
+    "purpose of the application",
+    "closing date",
+    "enquiries",
+    "applicant",
+    "case id",
+    "erf number",
+)
+
 class TimeoutException(Exception):
     pass
 
@@ -355,6 +364,9 @@ def extract_address(pages, attempt=0):
         for top in sorted_tops:
             if top > label_top:
                 line_text = line_texts[top]
+                # addresses without a street number (e.g. "Corner of X and Y") run into the next field
+                if line_text.strip().lower().startswith(NEXT_FIELD_LABELS):
+                    break
                 if line_text.strip():
                     address_lines.append(line_text)
                     if any(c.isdigit() for c in line_text):
