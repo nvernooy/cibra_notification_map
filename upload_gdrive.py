@@ -87,6 +87,8 @@ def create_folder(service, folder_name, email_id, legacy_prefix, parent_id, lega
         return folders[0]["id"]
 
     # folders created before email_id was stored are named "<legacy_prefix> (<date>)": adopt the oldest
+    if not legacy_prefix:
+        return _new_folder(service, folder_name, email_id, parent_id)
     parents = " or ".join(f"'{p}' in parents" for p in {parent_id, legacy_parent_id} if p)
     query = f"{base_query} and ({parents}) and name contains '{_escape(legacy_prefix)}'"
     folders = service.files().list(
@@ -97,7 +99,10 @@ def create_folder(service, folder_name, email_id, legacy_prefix, parent_id, lega
     if folders and not any("email_id" in f.get("appProperties", {}) for f in folders):
         service.files().update(fileId=folders[0]["id"], body={"appProperties": {"email_id": email_id}}).execute()
         return folders[0]["id"]
+    return _new_folder(service, folder_name, email_id, parent_id)
 
+
+def _new_folder(service, folder_name, email_id, parent_id):
     file_metadata = {
         "name": folder_name,
         "mimeType": "application/vnd.google-apps.folder",
@@ -237,8 +242,9 @@ def upload_kmz_layers(notice_kmz, public_kmz, events_kmz):
         upsert_kmz_layer(service, file_path, name, KMZ_FOLDER_ID)
 
 
-def upload_files(local_folder_path, pdf_file, address):
-    """Create a folder in Google Drive and upload all files from local folder."""
+def upload_files(local_folder_path, pdf_file, address, folder_title=None):
+    """Create a folder in Google Drive and upload all files from local folder.
+    folder_title names the folder instead of the address, for events where many share a venue."""
 
     # build the google drive folder name
     title = pdf_file
@@ -250,6 +256,10 @@ def upload_files(local_folder_path, pdf_file, address):
         suburb = address_parts[1].strip()
 
     prefix = f"{suburb} - {title}" if suburb else title
+    # legacy folders are named by address, which can't tell events at the same venue apart
+    legacy_prefix = None if folder_title else prefix
+    if folder_title:
+        prefix = f"{folder_title} - {title}"
     folder_name = f"{prefix} {datetime.now().strftime('(%d%b%y)')}"
     category_dir, email_id = os.path.split(os.path.normpath(local_folder_path))
     parent_id = CATEGORY_FOLDER_IDS.get(os.path.basename(category_dir))
@@ -264,7 +274,7 @@ def upload_files(local_folder_path, pdf_file, address):
     service = authenticate()
 
     # Create folder in Google Drive
-    folder_id = create_folder(service, folder_name, email_id, prefix, parent_id, PARENT_FOLDER_ID)
+    folder_id = create_folder(service, folder_name, email_id, legacy_prefix, parent_id, PARENT_FOLDER_ID)
 
     # Upload all files from local folder
     if not os.path.exists(local_folder_path):

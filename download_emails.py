@@ -18,8 +18,8 @@ os.makedirs(EVENTS_DIR, exist_ok=True)
 
 # date from when to find emails
 cuttoff_year = 2026
-cuttoff_month = 10
-cuttoff_day = 30
+cuttoff_month = 11
+cuttoff_day = 3
 
 url = "https://api.hubapi.com/crm/v3/objects/emails"
 
@@ -137,6 +137,7 @@ def list_emails():
             or "clientzone" in subject.lower()
             or "heritage portal" in subject.lower()
             or "out for comment" in subject.lower()
+            or subject.lower().startswith("recall:")
         ):
             # if not (
             #     "fwd" in subject.lower()
