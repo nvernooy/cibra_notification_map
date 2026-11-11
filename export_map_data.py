@@ -4,7 +4,27 @@ import csv
 import zipfile
 from datetime import date
 from pathlib import Path
+import re
 from xml.sax.saxutils import escape
+
+_SMALL_WORDS = {"a", "an", "and", "at", "by", "for", "in", "of", "on", "or", "the", "to"}
+
+
+def normalise_case(text):
+    """Title-case text that's shouted in all caps (often copied from subjects), leave the rest alone."""
+    letters = [c for c in text if c.isalpha()]
+    if not letters or sum(c.isupper() for c in letters) / len(letters) < 0.8:
+        return text
+
+    def fix(match):
+        word = match.group()
+        # keep codes like W77, EO26-1268, 1A
+        if any(c.isdigit() for c in word):
+            return word
+        word = word.lower()
+        return word if word in _SMALL_WORDS and match.start() else word.capitalize()
+
+    return re.sub(r"[A-Za-z0-9']+", fix, text)
 
 KML_STYLES = """  <Style id="icon-1899-0288D1-normal">
     <IconStyle>
@@ -79,7 +99,7 @@ KML_STYLES = """  <Style id="icon-1899-0288D1-normal">
 def _placemark_kml(item, style_id):
     title = escape(item.get("title") or "")
     address = escape(item.get("address") or "")
-    description = escape(item.get("description") or "")
+    description = escape(normalise_case(item.get("description") or ""))
     closing_date = escape(item.get("closing_date") or "")
     file_link = escape(item.get("file_link") or "")
     description_html = (
@@ -173,7 +193,7 @@ def export_to_map_csv(filename, document_data):
             writer.writerow([
                 item.get("address", ""),
                 item.get("title", ""),
-                item.get("description", ""),
+                normalise_case(item.get("description", "")),
                 item.get("closing_date", ""),
                 item.get("file_link", ""),
             ])

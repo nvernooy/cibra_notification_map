@@ -246,7 +246,7 @@ def process_subject_fallback(path):
         title = title[:100]
 
     # description: use the subject for context
-    description = subject
+    description = subject.removeprefix("W77 | ").strip()
 
     # prefer a participation website link from the body; otherwise upload any real attachments
     website = extract_website_link(body)
@@ -276,44 +276,46 @@ def process_subject_fallback(path):
     return document_data
 
 
+_DATE_PATTERN = re.compile(
+    r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|'
+    r'September|October|November|December)\s+(\d{4})\b',
+    re.IGNORECASE,
+)
+
+
+def _latest_date(text):
+    """Latest '<day> <Month> <year>' date in text, ignoring dates beyond the future_date window."""
+    latest = None
+    for day, month, year in _DATE_PATTERN.findall(text):
+        try:
+            date = datetime.strptime(f"{day} {month} {year}", "%d %B %Y")
+        except ValueError:
+            continue
+        if future_date(date.strftime("%d %B %Y")):
+            continue
+        if latest is None or date > latest:
+            latest = date
+    return latest
+
+
 def extract_closing_date_from_text(text):
-    """Find a '<day> <Month> <year>' date in free text, return camel-cased or ''."""
-    date_pattern = re.compile(
-        r'\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|'
-        r'September|October|November|December)\s+\d{4})\b',
-        re.IGNORECASE,
-    )
-    match = date_pattern.search(text)
-    return camel_case_word(match.group(1)) if match else ""
+    """Return the latest date in free text camel-cased, or ''.
+    Bodies can reference older dates (previous notices, plan dates) before the closing date."""
+    latest = _latest_date(text)
+    return camel_case_word(latest.strftime("%d %B %Y")) if latest else ""
 
 
 def extract_latest_date_from_pdfs(path, max_pages=6):
-    """Return the latest '<day> <Month> <year>' date in the pdfs, or ''.
-    Memos only state the event date in prose, which is usually after the memo's own date.
-    Dates beyond the future_date window are ignored, as they'd cause the email to be skipped."""
-    date_pattern = re.compile(
-        r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|'
-        r'September|October|November|December)\s+(\d{4})\b',
-        re.IGNORECASE,
-    )
-    latest = None
+    """Return the latest date in the pdfs, or ''.
+    Memos only state the event date in prose, which is usually after the memo's own date."""
+    texts = []
     for pdf_file in Path(path).glob("*.pdf"):
         try:
             with pdfplumber.open(pdf_file) as pdf:
-                text = "\n".join((page.extract_text() or "") for page in pdf.pages[:max_pages])
+                texts.append("\n".join((page.extract_text() or "") for page in pdf.pages[:max_pages]))
         except Exception as e:
             print(f"{pdf_file}: WARNING - could not read pdf for dates: {e}")
-            continue
-        for day, month, year in date_pattern.findall(text):
-            try:
-                date = datetime.strptime(f"{day} {month} {year}", "%d %B %Y")
-            except ValueError:
-                continue
-            if future_date(date.strftime("%d %B %Y")):
-                continue
-            if latest is None or date > latest:
-                latest = date
-    return camel_case_word(latest.strftime("%d %B %Y")) if latest else ""
+    return extract_closing_date_from_text("\n".join(texts))
 
 
 def parse_date_str(date_str: str) -> datetime:

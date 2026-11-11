@@ -31,10 +31,12 @@ VENUE_LOOKUP = {
     "mount nelson hotel": "76 Orange Street, Gardens, Cape Town",
 }
 
-# Matches the start of a date expression, e.g. "13-15 April 2026", "5th January 2026"
+_CODE_RE = re.compile(r"\bE[A-Z]?\d+-\d+\b")
+_MONTH = r"(?:January|February|March|April|May|June|July|August|September|October|November|December)"
+# Matches a date expression, e.g. "13-15 April 2026", "5th January 2026", "30 November-3 December 2026"
 _DATE_RE = re.compile(
-    r"\b\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?)?\s+"
-    r"(?:January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\b\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?)?\s+" + _MONTH
+    + r"(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?\s+" + _MONTH + r")?"
     r"(?:\s+\d{4})?",
     re.IGNORECASE,
 )
@@ -84,11 +86,10 @@ def parse_event_subject(subject: str) -> dict | None:
     clean = re.sub(r"\s*\|\s*", " - ", clean)
 
     # Collapse date ranges that use " - " between the two day numbers so they
-    # don't get mistaken for field separators, e.g. "9 - 10 February" → "9-10 February"
-    _MONTHS = (r"January|February|March|April|May|June|July|August|"
-               r"September|October|November|December")
+    # don't get mistaken for field separators, e.g. "9 - 10 February" → "9-10 February".
+    # The first day must start a segment, so "CTICC 2 - 11 November" stays split.
     clean = re.sub(
-        rf"(\b\d{{1,2}}(?:st|nd|rd|th)?)\s+-\s+(\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{_MONTHS}))",
+        rf"((?:^|\s-\s)\d{{1,2}}(?:st|nd|rd|th)?)\s+-\s+(\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH})",
         r"\1-\2",
         clean,
         flags=re.IGNORECASE,
@@ -201,14 +202,13 @@ def process_events_documents(path: str) -> list[dict]:
     address = parsed["address"]
     event_date = parsed["event_date"]
 
-    # For date ranges like "13-15 April 2026", use the end date for expiry check
-    end_date_match = re.search(
-        r"(\d{1,2}(?:st|nd|rd|th)?)\s+"
-        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
-        r"(?:\s+(\d{4}))?",
-        event_date,
-        re.IGNORECASE,
-    )
+    # For date ranges like "13-15 April 2026" or "30 November-3 December 2026", use the end date for expiry check
+    end_date_match = None
+    for end_date_match in re.finditer(
+        r"(\d{1,2}(?:st|nd|rd|th)?)\s+(" + _MONTH + r")(?:\s+(\d{4}))?", event_date, re.IGNORECASE
+    ):
+        pass
+    end_date = ""
     if not end_date_match:
         print(f"\n{email_id}: WARNING - could not extract date from '{event_date}' for expiry check")
     else:
@@ -216,13 +216,12 @@ def process_events_documents(path: str) -> list[dict]:
         month = end_date_match.group(2).capitalize()
         year = end_date_match.group(3) or ""
         end_date_str = f"{day} {month} {year}".strip()
+        end_date = f"{int(day)} {month}"
         if delete_if_expired(path, end_date_str):
             return []
 
     # Description: event name + venue for context
     description = f"{title} at {parsed['venue']}"
-
-    file_link = upload_files(path, "Events Permit", address)
 
     print(f"\n{subject}:")
     print(f"    Title:       {title}")
@@ -236,8 +235,27 @@ def process_events_documents(path: str) -> list[dict]:
         "title": title,
         "description": description,
         "closing_date": event_date,
-        "file_link": file_link,
+        "path": path,
+        "event_code": code_match.group() if (code_match := _CODE_RE.search(subject)) else "",
+        "end_date": end_date,
     }]
+
+
+def dedup_events(items: list[dict]) -> list[dict]:
+    """Drop repeat emails for the same event: same permit code and end date, or for
+    emails without a code, same address and end date as an event already kept."""
+    # permit-style subjects first so they're the ones kept over recalls, forwards and notices
+    items = sorted(items, key=lambda i: (not i["event_code"], not _CODE_RE.match(i["filename"])))
+    kept, seen = [], set()
+    for item in items:
+        addr_key = ("addr", item["address"], item["end_date"])
+        key = ("code", item["event_code"], item["end_date"]) if item["event_code"] else addr_key
+        if item["end_date"] and key in seen:
+            print(f"duplicate event - skipping: {item['filename']}")
+            continue
+        seen.update({key, addr_key})
+        kept.append(item)
+    return kept
 
 
 def process_all_events(directory: str) -> list[dict]:
@@ -249,5 +267,9 @@ def process_all_events(directory: str) -> list[dict]:
             result = process_events_documents(full_path)
             data.extend(result)
 
+    data = dedup_events(data)
+    # upload after dedup so repeat emails don't get their own folder
+    for item in data:
+        item["file_link"] = upload_files(item.pop("path"), "Events Permit", item["address"], item["title"])
     print(f"Got {len(data)} {directory} items")
     return data
