@@ -9,7 +9,7 @@ Pulls City of Cape Town notification emails from HubSpot, extracts address, desc
 
 ## Pipeline (`main.py`)
 1. `download_emails.list_emails`: fetches HubSpot emails newer than the hardcoded `cuttoff_*` date and sorts them by subject regex into `emails/` (noticeboard), `public_part_emails/` and `events_emails/`, one dir per email ID. Dirs that already exist are skipped.
-2. `process_documents.process_all_attachments`: parses PDFs with pdfplumber (OCR fallback via pytesseract) and falls back to the email subject and body. Gemini is used for summaries (`ai_summarise_descriptions`) and as a fallback for addresses (`ai_extract_address`). Email dirs whose closing date has passed are deleted (`delete_if_expired`). Source files are uploaded to a Drive folder under `PARENT_FOLDER_ID`, and the link is shortened with TinyURL.
+2. `process_documents.process_all_attachments`: parses PDFs with pdfplumber (OCR fallback via pytesseract) and falls back to the email subject and body. Gemini is used for summaries (`ai_summarise_descriptions`) and as a fallback for addresses (`ai_extract_address`). Email dirs whose closing date has passed are deleted (`delete_if_expired`). Source files are uploaded to one Drive folder per email (tagged with the email ID in `appProperties`) under `NOTICE_FOLDER_ID`, `PUBLIC_FOLDER_ID` or `EVENTS_FOLDER_ID` depending on the local dir, and the link is shortened with TinyURL. `PARENT_FOLDER_ID` is the old shared folder; existing folders in it are reused and left in place.
 3. `process_events_documents.process_all_events`: events are parsed from the subject line only. Venues map to addresses through `VENUE_LOOKUP`.
 4. `export_map_data.export_to_map_csv`: writes `{notice,public,events}_<date>.csv`.
 

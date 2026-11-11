@@ -73,6 +73,9 @@ def _call_model(model: str, text: str, retries: int = 4):
                 candidate = response.candidates[0]
                 finish_reason = getattr(candidate, "finish_reason", None)
                 safety = getattr(candidate, "safety_ratings", None)
+            # the prompt asks for nothing when no address is found
+            if finish_reason == types.FinishReason.STOP:
+                return ""
             raise RuntimeError(f"No text returned. finish_reason={finish_reason} safety={safety}")
 
         return response.text.strip()
@@ -89,9 +92,9 @@ def ai_extract_address(text: str, text_id):
     except Exception as e:
         e_str = str(e)
         if "429" in e_str or "RESOURCE_EXHAUSTED" in e_str or "503" in e_str or "UNAVAILABLE" in e_str:
-            print(f"Model unavailable for {text_id}, retrying with gemini-2.0-flash-lite...")
+            print(f"Model unavailable for {text_id}, retrying with gemini-3.5-flash-lite...")
             try:
-                result = _call_model("gemini-2.0-flash-lite", text)
+                result = _call_model("gemini-3.5-flash-lite", text)
             except Exception as fallback_e:
                 print(f"Fallback model also failed for {text_id}: {fallback_e}")
                 return ""

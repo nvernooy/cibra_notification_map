@@ -30,6 +30,9 @@ headers = {
 
 CACHE_FILE = "email_subject.json"
 
+# city events without an event permit code (e.g. "Notice | Festive Lights Switch-On 2026")
+EVENT_KEYWORDS = ("festive lights",)
+
 
 def load_cache():
     """Load previously generated texts"""
@@ -124,7 +127,7 @@ def list_emails():
             or "Weekly WP Mail SMTP Summary" in subject
             or "[Cape Town City Bowl Ratepayers' and Residents' Association (CIBRA)]" in subject
             or "Notice of Payment" in subject
-            or "Notice of No Objection" in subject
+            or "no objection" in subject.lower()
             or "ignore" in subject.lower()
             or "test" in subject.lower()
             or "afrihost" in subject.lower()
@@ -150,12 +153,14 @@ def list_emails():
         #     continue
 
         # export events
-        if re.search(r"E[A-Z]?\d+-\d+\b", subject):
+        if re.search(r"E[A-Z]?\d+-\d+\b", subject) or any(k in subject.lower() for k in EVENT_KEYWORDS):
             download_email(email, subject, EVENTS_DIR)
             continue
 
+        is_land_use = re.search(r"erf\s+\d+|case\s+\d+|land\s+use", subject, re.IGNORECASE)
+
         # public participation emails
-        if (re.search(r"public\s+participation|consultation", subject, re.IGNORECASE) or re.search(r"W77|WCP", subject, re.IGNORECASE) or re.search(r"(?=.*HIA)(?=.*comment)", subject, re.IGNORECASE) or ("public auction" in subject.lower()) or ("have your say" in subject.lower())):
+        if (subject.lower().startswith("public notice") and not is_land_use) or (re.search(r"public\s+participation|consultation", subject, re.IGNORECASE) or re.search(r"W77|WCP", subject, re.IGNORECASE) or re.search(r"(?=.*HIA)(?=.*comment)", subject, re.IGNORECASE) or ("public auction" in subject.lower()) or ("have your say" in subject.lower())):
             download_email(email, subject, PUBLIC_DIR)
             continue
 

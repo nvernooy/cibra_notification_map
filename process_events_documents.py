@@ -1,8 +1,10 @@
-"""Parse event permit emails from subject lines only — no AI calls."""
+"""Parse event permit emails from subject lines (or the attached PDF as a fallback) — no AI calls."""
 
 import re
 import os
 import unicodedata
+from pathlib import Path
+import pdfplumber
 from process_documents import format_address, get_email_subject, delete_if_expired
 from upload_gdrive import upload_files
 
@@ -160,6 +162,24 @@ def parse_event_subject(subject: str) -> dict | None:
     }
 
 
+def parse_event_pdf(path: str, subject: str) -> dict | None:
+    """Fallback for event notices without a permit-style subject: date and venue from the attached PDF."""
+    for pdf_file in sorted(Path(path).glob("*.pdf")):
+        with pdfplumber.open(pdf_file) as pdf:
+            text = (pdf.pages[0].extract_text() or "") if pdf.pages else ""
+        date_match = _DATE_RE.search(text)
+        normalised = _normalise(text)
+        venue = next((k for k in VENUE_LOOKUP if _normalise(k) in normalised), None)
+        if date_match and venue:
+            return {
+                "title": re.sub(r"^notice\s*[|:\-–]\s*", "", subject, flags=re.IGNORECASE).strip(),
+                "venue": venue.title(),
+                "address": VENUE_LOOKUP[venue],
+                "event_date": date_match.group().strip().title(),
+            }
+    return None
+
+
 def process_events_documents(path: str) -> list[dict]:
     """Extract event data from the subject line of an events email.
 
@@ -172,7 +192,7 @@ def process_events_documents(path: str) -> list[dict]:
         print(f"\n{email_id}: no subject found in cache")
         return []
 
-    parsed = parse_event_subject(subject)
+    parsed = parse_event_subject(subject) or parse_event_pdf(path, subject)
     if not parsed:
         print(f"\n{email_id}: could not parse subject: {subject}")
         return []

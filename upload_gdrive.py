@@ -14,22 +14,35 @@ import pathlib
 import requests
 from datetime import datetime
 
-# folder to create new folders under
+# legacy folder that used to hold every category, existing folders in it are still reused
 PARENT_FOLDER_ID = os.environ.get("PARENT_FOLDER_ID")
+# local email dir -> drive folder to create the per-email folders under
+CATEGORY_FOLDER_IDS = {
+    "emails": os.environ.get("NOTICE_FOLDER_ID"),
+    "public_part_emails": os.environ.get("PUBLIC_FOLDER_ID"),
+    "events_emails": os.environ.get("EVENTS_FOLDER_ID"),
+}
 # folder to store the KMZ map layers (stable file IDs for embedding)
 KMZ_FOLDER_ID = os.environ.get("KMZ_FOLDER_ID")
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 SHORT_LINKS_CACHE_FILE = "short_links.json"
 FOLDER_CACHE_FILE = "folder_links.json"
 
 
-def authenticate():
+def authenticate(api="drive", version="v3"):
     """Authenticate using OAuth (works with token file for headless)."""
     creds = None
     # token.pickle stores the user's access and refresh tokens
     if os.path.exists("token.pickle"):
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
+        # token from before a scope was added: force a new login
+        if not creds.has_scopes(SCOPES):
+            print("Token is missing scopes - log in again in the browser")
+            creds = None
 
     # If there are no valid credentials, let the user log in
     if not creds or not creds.valid:
@@ -56,25 +69,39 @@ def authenticate():
             with open("token.pickle", "wb") as token:
                 pickle.dump(creds, token)
 
-    return build("drive", "v3", credentials=creds)
+    return build(api, version, credentials=creds)
 
 
-def create_folder(service, folder_name, parent_id=None):
-    """Create a folder in Google Drive if it doesn't already exist."""
-    escaped_name = folder_name.replace("\\", "\\\\").replace("'", "\\'")
-    query = f"name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-    if parent_id:
-        query += f" and '{parent_id}' in parents"
+def _escape(value):
+    return value.replace("\\", "\\\\").replace("'", "\\'")
 
-    results = service.files().list(q=query, fields="files(id, name)").execute()
-    folders = results.get("files", [])
 
+def create_folder(service, folder_name, email_id, legacy_prefix, parent_id, legacy_parent_id=None):
+    """Return the Drive folder for this email, creating it under parent_id if it doesn't exist yet.
+    Existing folders are left where they are, including those in the legacy shared parent."""
+    base_query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+
+    query = f"{base_query} and appProperties has {{ key='email_id' and value='{_escape(email_id)}' }}"
+    folders = service.files().list(q=query, fields="files(id)").execute().get("files", [])
     if folders:
-        folder_id = folders[0]["id"]
-        return folder_id
+        return folders[0]["id"]
+
+    # folders created before email_id was stored are named "<legacy_prefix> (<date>)": adopt the oldest
+    parents = " or ".join(f"'{p}' in parents" for p in {parent_id, legacy_parent_id} if p)
+    query = f"{base_query} and ({parents}) and name contains '{_escape(legacy_prefix)}'"
+    folders = service.files().list(
+        q=query, fields="files(id, name, appProperties)", orderBy="createdTime", pageSize=100
+    ).execute().get("files", [])
+    folders = [f for f in folders if f["name"].startswith(f"{legacy_prefix} (")]
+    # only one email per address can adopt a legacy folder, the rest are duplicates
+    if folders and not any("email_id" in f.get("appProperties", {}) for f in folders):
+        service.files().update(fileId=folders[0]["id"], body={"appProperties": {"email_id": email_id}}).execute()
+        return folders[0]["id"]
+
     file_metadata = {
         "name": folder_name,
         "mimeType": "application/vnd.google-apps.folder",
+        "appProperties": {"email_id": email_id},
     }
     if parent_id:
         file_metadata["parents"] = [parent_id]
@@ -222,20 +249,22 @@ def upload_files(local_folder_path, pdf_file, address):
     if len(address_parts) > 1:
         suburb = address_parts[1].strip()
 
-    today = datetime.now().strftime("(%d%b%y)")
-    folder_name = f"{title} {today}"
-    if suburb:
-        folder_name = f"{suburb} - {folder_name}"
+    prefix = f"{suburb} - {title}" if suburb else title
+    folder_name = f"{prefix} {datetime.now().strftime('(%d%b%y)')}"
+    category_dir, email_id = os.path.split(os.path.normpath(local_folder_path))
+    parent_id = CATEGORY_FOLDER_IDS.get(os.path.basename(category_dir))
+    if not parent_id:
+        raise RuntimeError(f"No Drive folder configured for '{category_dir}', set NOTICE/PUBLIC/EVENTS_FOLDER_ID")
 
     cache = load_cache(FOLDER_CACHE_FILE)
-    if folder_name in cache:
-        return cache[folder_name]
+    if email_id in cache:
+        return cache[email_id]
 
     # Authenticate
     service = authenticate()
 
     # Create folder in Google Drive
-    folder_id = create_folder(service, folder_name, PARENT_FOLDER_ID)
+    folder_id = create_folder(service, folder_name, email_id, prefix, parent_id, PARENT_FOLDER_ID)
 
     # Upload all files from local folder
     if not os.path.exists(local_folder_path):
@@ -252,19 +281,15 @@ def upload_files(local_folder_path, pdf_file, address):
         print(f"No files found in '{local_folder_path}'")
         return
 
-    print(f"Uploading {len(files)} files... ", end="")
     for file_name in files:
         file_path = os.path.join(local_folder_path, file_name)
         try:
-            resp = upload_file(service, file_path, folder_id)
-            # file exists or other error, continue
-            if not resp:
-                break
+            upload_file(service, file_path, folder_id)
         except Exception as e:
             print(f"Error uploading {file_name}: {str(e)}")
 
     print(f"Done {local_folder_path}")
     link = make_public_link(service, folder_id)
-    cache[folder_name] = link
+    cache[email_id] = link
     save_cache(cache, FOLDER_CACHE_FILE)
     return link

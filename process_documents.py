@@ -227,8 +227,12 @@ def process_subject_fallback(path):
 
     body = read_email_body(path)
 
-    # closing date from the subject, else the body
-    closing_date = extract_closing_date_from_text(subject) or extract_closing_date_from_text(body)
+    # closing date from the subject, else the body, else the latest date in the attached pdfs
+    closing_date = (
+        extract_closing_date_from_text(subject)
+        or extract_closing_date_from_text(body)
+        or extract_latest_date_from_pdfs(path)
+    )
     if delete_if_expired(path, closing_date):
         return []
 
@@ -281,6 +285,35 @@ def extract_closing_date_from_text(text):
     )
     match = date_pattern.search(text)
     return camel_case_word(match.group(1)) if match else ""
+
+
+def extract_latest_date_from_pdfs(path, max_pages=6):
+    """Return the latest '<day> <Month> <year>' date in the pdfs, or ''.
+    Memos only state the event date in prose, which is usually after the memo's own date.
+    Dates beyond the future_date window are ignored, as they'd cause the email to be skipped."""
+    date_pattern = re.compile(
+        r'\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|'
+        r'September|October|November|December)\s+(\d{4})\b',
+        re.IGNORECASE,
+    )
+    latest = None
+    for pdf_file in Path(path).glob("*.pdf"):
+        try:
+            with pdfplumber.open(pdf_file) as pdf:
+                text = "\n".join((page.extract_text() or "") for page in pdf.pages[:max_pages])
+        except Exception as e:
+            print(f"{pdf_file}: WARNING - could not read pdf for dates: {e}")
+            continue
+        for day, month, year in date_pattern.findall(text):
+            try:
+                date = datetime.strptime(f"{day} {month} {year}", "%d %B %Y")
+            except ValueError:
+                continue
+            if future_date(date.strftime("%d %B %Y")):
+                continue
+            if latest is None or date > latest:
+                latest = date
+    return camel_case_word(latest.strftime("%d %B %Y")) if latest else ""
 
 
 def parse_date_str(date_str: str) -> datetime:
