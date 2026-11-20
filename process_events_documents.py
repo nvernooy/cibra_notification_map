@@ -5,7 +5,10 @@ import os
 import unicodedata
 from pathlib import Path
 import pdfplumber
-from process_documents import format_address, get_email_subject, delete_if_expired
+from process_documents import format_address, get_email_subject, delete_if_expired, future_date
+
+# events further out than this are downloaded and uploaded, but left off the map until closer
+MAP_WINDOW_DAYS = 90
 from upload_gdrive import upload_files
 
 # Well-known Cape Town venues → canonical address
@@ -31,12 +34,13 @@ VENUE_LOOKUP = {
     "mount nelson hotel": "76 Orange Street, Gardens, Cape Town",
 }
 
-_CODE_RE = re.compile(r"\bE[A-Z]?\d+-\d+\b")
+# "EO26-1386" or, since Nov 2026, "EO26 - 1386"
+_CODE_RE = re.compile(r"\bE[A-Z]?\d{2}\s*-\s*\d+\b")
 _MONTH = r"(?:January|February|March|April|May|June|July|August|September|October|November|December)"
 # Matches a date expression, e.g. "13-15 April 2026", "5th January 2026", "30 November-3 December 2026"
 _DATE_RE = re.compile(
     r"\b\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?)?\s+" + _MONTH
-    + r"(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?\s+" + _MONTH + r")?"
+    + r"(?:\s+\d{4})?(?:\s*[-–—]\s*\d{1,2}(?:st|nd|rd|th)?\s+" + _MONTH + r")?"
     r"(?:\s+\d{4})?",
     re.IGNORECASE,
 )
@@ -84,6 +88,7 @@ def parse_event_subject(subject: str) -> dict | None:
     clean = re.sub(r"\s*\(\s*[Ee]xtern[^)]*\)\s*$", "", subject).strip()
     # Normalise pipe separators used in some free-concert subjects
     clean = re.sub(r"\s*\|\s*", " - ", clean)
+    clean = re.sub(r"^EXTERNAL\s*:\s*", "", clean, flags=re.IGNORECASE)
 
     # Collapse date ranges that use " - " between the two day numbers so they
     # don't get mistaken for field separators, e.g. "9 - 10 February" → "9-10 February".
@@ -94,9 +99,17 @@ def parse_event_subject(subject: str) -> dict | None:
         clean,
         flags=re.IGNORECASE,
     )
+    # same for ranges across months, e.g. "01 April - 03 April 2027"
+    clean = re.sub(
+        rf"(\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+\d{{4}})?)\s+-\s+(\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH})",
+        r"\1-\2",
+        clean,
+        flags=re.IGNORECASE,
+    )
 
     # Extract and remove the leading event code (e.g. "EO26-0155", "EP26-0066")
-    code_match = re.match(r"^(E[A-Z]?\d+-\d+)\s*-\s*", clean)
+    # the number is sometimes missing, e.g. "EO26 - Totalsports Two Oceans ..."
+    code_match = re.match(r"^(E[A-Z]?\d{2}(?:\s*-\s*\d+)?)\s*-\s*", clean)
     if code_match:
         remainder = clean[code_match.end():].strip()
     else:
@@ -128,7 +141,8 @@ def parse_event_subject(subject: str) -> dict | None:
     if date_idx is None or date_idx < 1:
         return None
 
-    venue_text = parts[date_idx - 1]
+    # drop a trailing postal code, e.g. "..., Cape Town, 8001"
+    venue_text = re.sub(r",?\s*\b\d{4}$", "", parts[date_idx - 1].strip())
 
     # If the venue segment is a bare city/area name (no comma, no street number),
     # it's probably a trailing city suffix — merge it with the preceding segment.
@@ -208,7 +222,7 @@ def process_events_documents(path: str) -> list[dict]:
         r"(\d{1,2}(?:st|nd|rd|th)?)\s+(" + _MONTH + r")(?:\s+(\d{4}))?", event_date, re.IGNORECASE
     ):
         pass
-    end_date = ""
+    end_date = end_date_str = ""
     if not end_date_match:
         print(f"\n{email_id}: WARNING - could not extract date from '{event_date}' for expiry check")
     else:
@@ -236,8 +250,9 @@ def process_events_documents(path: str) -> list[dict]:
         "description": description,
         "closing_date": event_date,
         "path": path,
-        "event_code": code_match.group() if (code_match := _CODE_RE.search(subject)) else "",
+        "event_code": re.sub(r"\s", "", code_match.group()) if (code_match := _CODE_RE.search(subject)) else "",
         "end_date": end_date,
+        "end_date_str": end_date_str,
     }]
 
 
@@ -271,5 +286,13 @@ def process_all_events(directory: str) -> list[dict]:
     # upload after dedup so repeat emails don't get their own folder
     for item in data:
         item["file_link"] = upload_files(item.pop("path"), "Events Permit", item["address"], item["title"])
+
+    upcoming = []
+    for item in data:
+        if item["end_date_str"] and future_date(item["end_date_str"], days=MAP_WINDOW_DAYS):
+            print(f"more than {MAP_WINDOW_DAYS} days away - leaving off the map: {item['filename']}")
+        else:
+            upcoming.append(item)
+    data = upcoming
     print(f"Got {len(data)} {directory} items")
     return data
