@@ -43,6 +43,10 @@ def process_documents(path):
     documents_path = Path(path)
     document_data = []
 
+    if skip_reason := not_a_notice(documents_path):
+        print(f"{path}: skipping - {skip_reason}")
+        return []
+
     # only match the Notice or Advertising Notice or Motivation pdfs
     pdf_files = [
         f for f in documents_path.glob("*.pdf")
@@ -154,6 +158,16 @@ def process_documents(path):
     return document_data
 
 
+def not_a_notice(documents_path):
+    """Reason to skip emails that match the notice subjects but aren't new applications, or ''."""
+    if any("cibra_signed" in f.name.lower() for f in documents_path.iterdir()):
+        return "CIBRA's own signed comment/objection"
+    body = documents_path / "body.txt"
+    if body.exists() and "submitted to the MPT Secretariat" in body.read_text(errors="ignore"):
+        return "MPT courtesy notification"
+    return ""
+
+
 def get_email_subject(path):
     """Return the cached subject line for an email directory, or ''."""
     try:
@@ -175,8 +189,12 @@ def delete_if_expired(path, date_str):
             print(f"{path}: DELETING - date {date_str} expired")
             shutil.rmtree(path)
             return True
-        # check for far future dates
-        return future_date(date_str)
+        # far future dates are usually misparsed
+        # event dates come from the permit subject, so far-off events are real
+        if "events_emails" not in str(path) and future_date(date_str):
+            print(f"{path}: WARNING - SKIPPING, date {date_str} is too far in the future")
+            return True
+        return False
     except Exception as e:
         print(f"{path}: WARNING - could not check expiry for '{date_str}': {e}")
     return False
@@ -357,7 +375,8 @@ def expired_date(path, date_str: str, days=10) -> bool:
     return datetime.now() - date > timedelta(days=days)
 
 
-def future_date(date_str: str, days=60) -> bool:
+# comment periods over December run long, e.g. a notice in late Nov closing 1 Feb
+def future_date(date_str: str, days=120) -> bool:
     """ Check if the string date is more than `days` days in the future """
     date = parse_date_str(date_str)
 
